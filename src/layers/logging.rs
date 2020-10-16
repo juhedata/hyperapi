@@ -1,17 +1,15 @@
 use hyper::{Response, Request, Body, StatusCode};
-use crate::proxy::config::LoggingSetting;
+use crate::config::LoggingSetting;
 use std::collections::HashMap;
 use log;
 use mlua::{Lua, StdLib};
-use tower::Service;
-use futures::Future;
-use futures::task::Context;
-use std::task::Poll;
+use tower::{layer::Layer, Service};
+use std::future::Future;
+use std::task::{Context, Poll};
 use anyhow::Error;
 
 
-
-impl<S> Layer for LoggingSetting {
+impl<S> Layer<S> for LoggingSetting {
     type Service = CorService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
@@ -20,7 +18,6 @@ impl<S> Layer for LoggingSetting {
         LoggingService { lua: vm, inner }
     }
 }
-
 
 
 pub struct LoggingService<S> {
@@ -33,7 +30,6 @@ pub struct LoggingService<S> {
     lua: Lua,
     inner: S
 }
-
 
 
 impl<S> Service<Request<Body>> for LoggingService<S>

@@ -1,8 +1,9 @@
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
+use hyper::Uri;
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GatewayConfig {
     pub env: String,
     pub listen: String,
@@ -12,53 +13,60 @@ pub struct GatewayConfig {
     pub logging: String,
     pub config_provider: Option<String>,
     pub reload_trigger: String,
-    pub filters_setting: bool,
+    pub filters_setting: HashMap<String, HashMap<String, String>>,
     pub apps: Vec<ClientInfo>,
     pub services: Vec<ServiceInfo>,
 }
 
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ClientInfo {
-    pub id: String,
-    pub app_key: String,
-    pub app_secret: String,
-
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ConfigUpdate {
+    Client(ClientInfo),
+    Service(ServiceInfo),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ClientInfo {
+    pub app_id: String,
+    pub app_key: String,
+    pub app_secret: String,
+    pub services: HashMap<String, Vec<FilterSetting>>,
+}
+
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ServiceInfo {
     pub service_id: String,
     pub api: String,
     pub api_type: String,
     pub auth_type: String,
     pub auth_setting: String,
-    pub upstreams: Vec<String>,
+    pub upstreams: Vec<Uri>,
     pub lb_schema: String,
     pub filters: Vec<FilterSetting>,
-    pub clients: HashMap<String, Vec<FilterSetting>>
 }
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RateLimit {
     pub duration: i32,  // ms
     pub limit: i32,
     pub burst: i32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RateLimitSetting {
     pub limits: Vec<RateLimit>
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IPAclSetting {
     pub white_list: Vec<String>,
     pub black_list: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HeaderSetting {
     pub request_inject: HashMap<String, String>,
     pub request_remove: Vec<String>,
@@ -66,7 +74,7 @@ pub struct HeaderSetting {
     pub response_remove: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoggingSetting {
     pub message_expr: String,
     pub condition_expr: String,
@@ -76,12 +84,12 @@ pub struct LoggingSetting {
     pub post_request: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CorsSetting {
     pub public: bool
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CacheSetting {
     pub cache_key_expr: String,
     pub max_entries: i32,
@@ -92,13 +100,13 @@ pub struct CacheSetting {
     pub invalidation_header: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ScriptSetting {
     pub request_expr: Option<String>,
     pub response_expr: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum FilterSetting {
     RateLimit(RateLimitSetting),
@@ -108,19 +116,4 @@ pub enum FilterSetting {
     Cors(CorsSetting),
     Cache(CacheSetting),
     Script(ScriptSetting),
-}
-
-
-impl FilterSetting {
-    pub fn get_type(fs: &FilterSetting) -> String {
-        match fs {
-            FilterSetting::RateLimit(_) => String::from("proxy"),
-            FilterSetting::IPAcl(_) => String::from("ip_acl"),
-            FilterSetting::Header(_) => String::from("header"),
-            FilterSetting::Logging(_) => String::from("logging"),
-            FilterSetting::Cors(_) => String::from("cors"),
-            FilterSetting::Cache(_) => String::from("cache"),
-            FilterSetting::Script(_) => String::from("script"),
-        }
-    }
 }

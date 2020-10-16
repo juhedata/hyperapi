@@ -1,4 +1,8 @@
 pub mod gateway;
 pub mod config;
-//pub mod proxy;
-pub mod handler;
+mod proxy;
+mod handler;
+mod server;
+
+pub use server::GatewayServer;
+pub use proxy::build_proxy_handler;

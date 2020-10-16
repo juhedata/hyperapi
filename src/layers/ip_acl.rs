@@ -1,14 +1,13 @@
 use hyper::{Response, Request, Body, StatusCode};
-use crate::proxy::config::IPAclSetting;
+use crate::config::IPAclSetting;
 use std::collections::HashMap;
 use tower::{layer::Layer, Service};
 use anyhow::Error;
-use futures::Future;
-use futures::task::Context;
-use std::task::Poll;
+use std::future::Future;
+use std::task::{Context, Poll};
 
 
-impl<S> Layer for IPAclSetting {
+impl<S> Layer<S> for IPAclSetting {
     type Service = IPAclService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {

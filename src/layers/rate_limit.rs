@@ -1,18 +1,17 @@
 use redis;
 use hyper::{Response, Request, Body, StatusCode};
-use crate::proxy::config::{RateLimitSetting, RateLimit};
+use crate::config::{RateLimitSetting, RateLimit};
 use std::collections::HashMap;
 use time::OffsetDateTime;
 use log;
 use tower::{layer::Layer, Service};
 use std::sync::Arc;
 use anyhow::Error;
-use futures::Future;
-use futures::task::Context;
-use std::task::Poll;
+use std::future::Future;
+use std::task::{Context, Poll};
 
 
-impl<S> Layer for RateLimitSetting {
+impl<S> Layer<S> for RateLimitSetting {
     type Service = RateLimitService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
@@ -31,7 +30,7 @@ pub struct RateLimitService<S> {
 }
 
 
-impl<S> Service<Request<Body>> for RateLimitFilter<S>
+impl<S> Service<Request<Body>> for RateLimitService<S>
     where S: Service<Request<Body>, Response=Response<Body>>
 {
     type Response = S::Response;
@@ -66,7 +65,7 @@ impl<S> Service<Request<Body>> for RateLimitFilter<S>
 
 
 impl<S> RateLimitService<S> {
-    pub fn new(redis: redis::Client) -> RateLimitFilter {
+    pub fn new(redis: redis::Client) -> RateLimitService {
         let script = redis::Script::new(r#"
 local tokens_key = KEYS[1]
 local timestamp_key = KEYS[2]
@@ -103,7 +102,7 @@ redis.call("setex", timestamp_key, ttl, now)
 return allowed
         "#);
 
-        RateLimitFilter {redis, script}
+        RateLimitService {redis, script}
     }
 
     async fn check(&self, key: &str, duration: i32, limit: i32, burst: i32, now: i64) -> Result<bool, redis::RedisError> {

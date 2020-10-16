@@ -1,17 +1,16 @@
 use hyper::{Response, Request, Body};
-use crate::proxy::config::HeaderSetting;
+use crate::config::HeaderSetting;
 use std::collections::HashMap;
 use tower::{layer::Layer, Service};
 use anyhow::Error;
-use futures::Future;
-use futures::task::Context;
-use std::task::Poll;
+use std::future::Future;
+use std::task::{Context, Poll};
 
 
-impl<S> Layer for HeaderSetting {
+impl<S> Layer<S> for HeaderSetting {
     type Service = HeaderService<S>;
 
-    fn layer(&self, inner: _) -> Self::Service {
+    fn layer(&self, inner: S) -> Self::Service {
 
         HeaderService {
             request_inject: self.request_inject.clone(),

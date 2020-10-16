@@ -1,16 +1,15 @@
 use hyper::{Response, Request, Body, StatusCode};
-use crate::proxy::config::CacheSetting;
+use crate::config::CacheSetting;
 use std::collections::HashMap;
 use redis::{Client, Script, RedisError};
 use mlua::{Lua, StdLib};
 use anyhow::Error;
-use tower::Service;
-use futures::Future;
-use futures::task::Context;
-use std::task::Poll;
+use tower::{layer::Layer, Service};
+use std::future::Future;
+use std::task::{Context, Poll};
 
 
-impl<S> Layer for CacheSetting {
+impl<S> Layer<S> for CacheSetting {
     type Service = CacheService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
@@ -41,6 +40,7 @@ impl<S> Service<Request<Body>> for CacheService<S>
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
+        // todo
         self.inner.call(req)
     }
 

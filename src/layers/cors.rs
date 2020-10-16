@@ -1,12 +1,10 @@
-use tower::layer::Layer;
-use tower::Service;
+use tower::{layer::Layer, Service};
 use hyper::{Response, Request, Body, StatusCode};
 use std::collections::HashMap;
-use futures::task::Context;
-use std::task::Poll;
+use std::future::Future;
+use std::task::{Context, Poll};
 use anyhow::Error;
-use futures::Future;
-use crate::proxy::config::CorsSetting;
+use crate::config::CorsSetting;
 
 
 pub struct CorsService<S> {
@@ -15,8 +13,8 @@ pub struct CorsService<S> {
 }
 
 
-impl<S> Layer for CorsSetting {
-    type Service = CorService<S>;
+impl<S> Layer<S> for CorsSetting {
+    type Service = CorsService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
         CorsService { public: self.public, inner }

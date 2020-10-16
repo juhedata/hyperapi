@@ -1,24 +1,24 @@
 use hyper::{Response, Request, Body};
 use std::collections::HashMap;
-use tower::{Service, Layer};
+use tower::{Service, layer::Layer};
 use mlua::{Function, Lua, MetaMethod, UserData, UserDataMethods, Variadic, StdLib};
 use mlua::Result as LuaResult;
 use anyhow::Error;
-use futures::Future;
-use futures::task::Context;
+use std::future::Future;
+use std::task::Context;
 use std::task::Poll;
-use crate::proxy::config::ScriptSetting;
+use crate::config::ScriptSetting;
 
 
 pub struct ScriptService<S> {
     pub request_expr: Option<String>,
-    pub response_expr: Optoin<String>,
+    pub response_expr: Option<String>,
     lua: Lua,
     inner: S,
 }
 
 
-impl<S> Layer for ScriptSetting {
+impl<S> Layer<S> for ScriptSetting {
     type Service = ScriptService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
@@ -49,7 +49,7 @@ impl<S> Service<Request<Body>> for ScriptService<S>
         if self.request_expr.is_some() {
             let result = self.lua.scope(|scope| {
                 self.lua.globals().set("request", &req);
-                self.lua.load(&s.request_expr).eval::<Request<Body>>()
+                self.lua.load(self.request_expr).eval::<Request<Body>>()
             });
             if result.is_ok() {
                 req_new.replace(result.unwrap());
@@ -60,9 +60,9 @@ impl<S> Service<Request<Body>> for ScriptService<S>
             let mut resp = self.inner.call(req_new.unwrap()).await?;
             if self.response_expr.is_some() {
                 let result = self.lua.scope(|scope| {
-                    self.lua.globals().set("request", r);
+                    self.lua.globals().set("request", req_new.unwrap());
                     self.lua.globals().set("response", resp);
-                    self.lua.load(&s.request_expr).eval::<Response<Body>>()
+                    self.lua.load(self.request_expr).eval::<Response<Body>>()
                 });
                 return result;
             }
