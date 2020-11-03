@@ -1,15 +1,16 @@
 use tokio;
 use log::*;
 use clap::{App, Arg};
-use hyper::Server;
+use hyper::{Server, Uri};
 use hyper::server::conn::AddrStream;
 use hyper::service::make_service_fn;
 use serde_yaml;
 use std::convert::Infallible;
 use serde::{Serialize, Deserialize};
-use hyperapi::config::GatewayConfig;
+use hyperapi::config::{GatewayConfig, config_poll};
 use hyperapi::proxy::GatewayServer;
 use env_logger;
+use std::sync::{Arc, Mutex};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ServerConfigFile {
@@ -44,15 +45,28 @@ async fn main() {
         let config_file = serde_yaml::from_str::<ServerConfigFile>(&content).expect("Failed to parse config file");
         let config = config_file.apihub;
         let addr = config.listen.parse().expect("Invalid listen address");
+        let config_source = config.config_source.clone();
         // let cert_file = config.ssl_certificate.clone();
         // let cert_key_file = config.ssl_certificate_key.clone();
 
         let server = GatewayServer::new(config);
+        let server = Arc::new(Mutex::new(server));
+
+        if let Some(source) = config_source {
+            let s = server.clone();
+            tokio::spawn(async move {
+                let source_uri = source.parse::<Uri>().unwrap();
+                config_poll(source_uri, s).await
+            });
+        }
 
         debug!("Starting http gateway edge server");
         let make_svc = make_service_fn(|socket: &AddrStream| {
             let remote_addr = socket.remote_addr();
-            let handler = server.make_service(remote_addr);
+            let handler = {
+                let lock = server.lock().expect("GatewayServer status error");
+                lock.make_service(remote_addr)
+            };
             async move {
                 Ok::<_, Infallible>(handler)
             }

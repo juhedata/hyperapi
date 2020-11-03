@@ -10,14 +10,13 @@ use crate::layer::{ProxyService, CorsService, HeaderService, RateLimitService};
 
 
 pub struct ServiceHandler {
-    pub config: Vec<ServiceInfo>,
     worker_queues: HashMap<String, mpsc::Sender<ServiceRequest>>,
 }
 
 
 impl ServiceHandler {
 
-    pub fn new(config: Vec<ServiceInfo>) -> Self {
+    pub fn new(config: &Vec<ServiceInfo>) -> Self {
         let mut worker_queues: HashMap<String, mpsc::Sender<ServiceRequest>> = HashMap::new();
 
         for c in config.iter() {
@@ -29,7 +28,7 @@ impl ServiceHandler {
             worker_queues.insert(c.service_id.clone(), tx);
         }
 
-        ServiceHandler { config, worker_queues }
+        ServiceHandler { worker_queues }
     }
 
     pub async fn service_chain(&mut self, mut rx: mpsc::Receiver<ServiceRequest>) {

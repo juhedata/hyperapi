@@ -16,24 +16,37 @@ use super::client_filter::ClientFilter;
 
 #[derive(Clone)]
 pub struct AuthHandler {
-    apps: Arc<HashMap<String, (ClientInfo, HashMap<String, Arc<Mutex<ClientFilter>>>)>>,
+    apps: Arc<HashMap<String, (ClientId, HashMap<String, Arc<Mutex<ClientFilter>>>)>>,
     services: HashMap<String, AuthSetting>
 }
 
 
+#[derive(Clone)]
+pub struct ClientId {
+    pub app_id: String,
+    pub app_key: String,
+    pub app_secret: String,
+}
+
+
 impl AuthHandler {
-    pub fn new(config: &GatewayConfig) -> Self {
+    pub fn new(apps_conf: &Vec<ClientInfo>, services_conf: &Vec<ServiceInfo>) -> Self {
         let mut apps = HashMap::new();
-        for c in config.apps.iter() {
+        for c in apps_conf.iter() {
             let mut ss = HashMap::new();
             for (k, v) in c.services.iter() {
                 ss.insert(k.clone(), Arc::new(Mutex::new(ClientFilter::new(v))));
             }
-            apps.insert(c.app_key.clone(), (c.clone(), ss));
+            let cid = ClientId {
+                app_id: c.app_id.clone(),
+                app_key: c.app_key.clone(),
+                app_secret: c.app_secret.clone(),
+            };
+            apps.insert(c.app_key.clone(), (cid, ss));
         }
 
         let mut services = HashMap::new();
-        for s in config.services.iter() {
+        for s in services_conf.iter() {
             services.insert(s.service_id.clone(), s.auth.clone());
         }
         AuthHandler { apps: Arc::new(apps), services }
@@ -43,7 +56,7 @@ impl AuthHandler {
     pub async fn auth_worker(&mut self, mut rx: mpsc::Receiver<AuthRequest>) {
         debug!("start auth handler");
         while let Some(x) = rx.recv().await {
-            let AuthRequest {service_id, request, result} = x;
+            let AuthRequest {service_id, mut request, result} = x;
             if let Some(auth) = self.services.get(&service_id) {
                 let app_key = Self::verify_token(&request, auth.clone(), self.apps.clone()).await;
                 debug!("app_key {:?}", app_key);
@@ -51,7 +64,13 @@ impl AuthHandler {
                     Some(key) => {
                         let cliennt_tuple = self.apps.get(&key);
                         match cliennt_tuple {
-                            Some((_client, services)) => {
+                            Some((client, services)) => {
+                                let client_id = ClientId {
+                                    app_id: client.app_id.clone(),
+                                    app_key: client.app_key.clone(),
+                                    app_secret: client.app_secret.clone(),
+                                };
+                                request.extensions_mut().insert(client_id);
                                 if let Some(cf) = services.get(&service_id) {
                                     Some(cf.clone())
                                 } else { None }
@@ -81,7 +100,7 @@ impl AuthHandler {
     }
 
 
-    async fn verify_token(request: &Request<Body>, auth_type: AuthSetting, apps: Arc<HashMap<String, (ClientInfo, HashMap<String, Arc<Mutex<ClientFilter>>>)>>) -> Option<String> {
+    async fn verify_token(request: &Request<Body>, auth_type: AuthSetting, apps: Arc<HashMap<String, (ClientId, HashMap<String, Arc<Mutex<ClientFilter>>>)>>) -> Option<String> {
         let app_key = match auth_type {
             AuthSetting::AppKey(AppKeyAuth { header_name: _header, param_name: _param }) => {
                 let token = Self::get_auth_token(request);

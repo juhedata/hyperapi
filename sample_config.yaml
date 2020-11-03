@@ -11,7 +11,7 @@ apihub:
       backend: redis://localhost:6379/2
 
   config_provider: "https://apihub.leric.net/gw/438952832y8f78w7a8378hf43"
-  auto_reload: false
+  reload_trigger: "poll"
 
   apps:
     - app_id: platform.crm
