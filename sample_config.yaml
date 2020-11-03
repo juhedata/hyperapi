@@ -1,49 +1,46 @@
 apihub:
   env: office
-  listen: 0.0.0.0:8000
+  listen: 0.0.0.0:8888
   ssl_certificate: ""
   ssl_certificate_key: ""
 
-  daemon: false
-  logging: syslog
-
-  filter_setting:
+  filters_setting:
     cache:
       backend: redis://localhost:6379/1
     rate_limit:
       backend: redis://localhost:6379/2
 
-  config_provider: "wss://apihub.leric.net/gw/438952832y8f78w7a8378hf43"
-  reload_trigger: ws    # ws | signal | http
+  config_provider: "https://apihub.leric.net/gw/438952832y8f78w7a8378hf43"
+  auto_reload: false
 
   apps:
-    - id: platform.crm
+    - app_id: platform.crm
       app_key: 1345432321
       app_secret: 4535324321
-      services:
-        accont_service.test:
-          filters:
-            - type: IPAcl
-              white_list:
-                - 192.168.31.0/24
-                - 192.168.30.0/24
-            - type: RateLimit
-              limits:
-                - {duration: 1, limit: 10, burst: 100}
-                - {duration: 3600, limit: 10000, burst: 10000}
+      ip_whitelist: ["192.168.0.0/16"]
+      filters:
+        account_service:
+          - type: RateLimit
+            path_pattern: ".*"
+            limits:
+              - {duration: 1, limit: 10, burst: 100}
+              - {duration: 3600, limit: 10000, burst: 10000}
 
   services:
-    - id: account_service.test  # api url first segment
+    - service_id: account_service 
+      endpoint: account         # api url first segment
       api: juhe_account
       api_type: rest
-      auth_type: app_key        # basic | jwt | oauth2
-      auth_setting: ""
+      auth:
+        type: JWT               # basic | jwt | oauth2
+        identity: "sub"
+      timeout: 3000
+      log_detail: false
       upstreams:
-        - "http://crm.juhe.cn/api/"
-        - "https://crm.juhe.cn/api2/"
-      lb_schema: random         # round-robin | latency | concurrency
+        - { target: "http://127.0.0.1:8000/" }
       filters:
         - type: Header
+          path_pattern: ".*"
           request_inject:
             X-Authentication: "source-authenticate-token"
           request_remove:
@@ -53,12 +50,8 @@ apihub:
           response_remove:
             - "etag"
             - "cache_control"
-        - type: Logging
-          level: info
-          category: detail
-          post_request: true
-          pre_request: false
-          condition_expr: ""
-          message_expr: ""
-
+        - type: RateLimit
+          path_pattern: ".*"
+          limits:
+            - {duration: 1, limit: 100, burst: 500}
 

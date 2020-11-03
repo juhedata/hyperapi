@@ -1,11 +1,18 @@
 use tokio;
 use clap::{App, Arg};
-use async_std::fs;
-use hyper::{Server, service::make_service_fn, server::conn::AddrStream};
-use std::sync::Arc;
-use anyhow::Error;
-use apihub_gateway::proxy::GatewayServer;
-use apihub_gateway::config::GatewayConfig;
+use hyper::{Server, server::conn::AddrStream};
+use hyper::service::{make_service_fn};
+use serde_yaml;
+use std::convert::Infallible;
+use serde::{Serialize, Deserialize};
+
+use hyperapi::config::GatewayConfig;
+use hyperapi::proxy::GatewayServer;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ServerConfigFile {
+    pub apihub: GatewayConfig,
+}
 
 
 #[tokio::main]
@@ -22,32 +29,30 @@ async fn main() {
                .short("t").long("test")
                .help("Validate config file"))
           .get_matches();
-    let config_file = matches.value_of("c").unwrap();
-    let is_testing = matches.is_present("t");
+    let config_file = matches.value_of("config").unwrap();
+    let is_testing = matches.is_present("test");
 
     if is_testing {
+        // todo
         println!("Validating config file");
     } else {
-        let content = fs::read_to_string(config_file).await.unwrap();
-        let config = serde_yaml::from_str::<GatewayConfig>(&content).unwrap();
+        let content = tokio::fs::read_to_string(config_file).await.unwrap();
+        let config_file = serde_yaml::from_str::<ServerConfigFile>(&content).unwrap();
+        let config = config_file.apihub;
         let addr = config.listen.parse().unwrap();
-        let gateway = Arc::new(GatewayServer::new(config).await);
-
-        let gwconf = Arc::clone(gateway);
-        tokio::spawn(async move {
-            gwconf.watch_config_update().await
-        });
-
-        let make_svc = make_service_fn(|conn: &AddrStream| {
-            let gw = Arc::clone(&gateway);
-            let addr = conn.remote_addr().clone();
+        let server = GatewayServer::new(config);
+        
+        let make_svc = make_service_fn(|socket: &AddrStream| {
+            let remote_addr = socket.remote_addr();
+            let handler = server.make_service(remote_addr);
             async move {
-                Ok::<_, Error>(gw.make_service(addr))
+                Ok::<_, Infallible>(handler)
             }
         });
 
         // start listening
         let server = Server::bind(&addr).serve(make_svc);
+
         server.await.unwrap();
     }
 }
