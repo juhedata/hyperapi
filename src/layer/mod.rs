@@ -6,6 +6,6 @@ mod rate_limit;
 pub use proxy::{ProxyService, ProxyHandler};
 pub use cors::CorsService;
 pub use header::HeaderService;
-pub use rate_limit::RateLimitService;
+pub use rate_limit::{RateLimitService, TokenBucket};
 
 

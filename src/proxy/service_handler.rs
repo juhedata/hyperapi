@@ -1,3 +1,4 @@
+use log::*;
 use hyper::Response;
 use tokio::sync::mpsc;
 use std::time::Duration;
@@ -32,6 +33,7 @@ impl ServiceHandler {
     }
 
     pub async fn service_chain(&mut self, mut rx: mpsc::Receiver<ServiceRequest>) {
+        debug!("start service handler");
         while let Some(x) = rx.recv().await {
             if let Some(ch) = self.worker_queues.get_mut(&x.service) {
                 ch.send(x).await.unwrap();

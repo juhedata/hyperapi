@@ -21,6 +21,7 @@ pub struct ClientInfo {
     pub app_key: String,
     pub app_secret: String,
     pub ip_whitelist: Vec<String>,
+    pub services: HashMap<String, Vec<FilterSetting>>,
 }
 
 
@@ -32,7 +33,6 @@ pub struct ServiceInfo {
     pub upstreams: Vec<Upstream>,
     pub timeout: u64,
     pub filters: Vec<FilterSetting>,
-    pub clients: HashMap<String, Vec<FilterSetting>>,
 }
 
 
@@ -86,8 +86,8 @@ pub enum FilterSetting {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppKeyAuth {
-    pub header_name: String,
-    pub param_name: String,
+    pub header_name: Option<String>,
+    pub param_name: Option<String>,
 }
 
 
@@ -103,7 +103,7 @@ pub struct OAuth2Auth {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct JwtAuth {
-    pub identity: String,
+    pub identity: Option<String>,
 }
 
 

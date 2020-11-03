@@ -1,13 +1,15 @@
 use tokio;
+use log::*;
 use clap::{App, Arg};
-use hyper::{Server, server::conn::AddrStream};
-use hyper::service::{make_service_fn};
+use hyper::Server;
+use hyper::server::conn::AddrStream;
+use hyper::service::make_service_fn;
 use serde_yaml;
 use std::convert::Infallible;
 use serde::{Serialize, Deserialize};
-
 use hyperapi::config::GatewayConfig;
 use hyperapi::proxy::GatewayServer;
+use env_logger;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ServerConfigFile {
@@ -17,6 +19,8 @@ struct ServerConfigFile {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     let matches = App::new("apihub.rs")
           .version("0.1")
           .author("Leric Zhang <leric.zhang@gmail.com>")
@@ -36,12 +40,16 @@ async fn main() {
         // todo
         println!("Validating config file");
     } else {
-        let content = tokio::fs::read_to_string(config_file).await.unwrap();
-        let config_file = serde_yaml::from_str::<ServerConfigFile>(&content).unwrap();
+        let content = tokio::fs::read_to_string(config_file).await.expect("Failed to read config file");
+        let config_file = serde_yaml::from_str::<ServerConfigFile>(&content).expect("Failed to parse config file");
         let config = config_file.apihub;
-        let addr = config.listen.parse().unwrap();
+        let addr = config.listen.parse().expect("Invalid listen address");
+        // let cert_file = config.ssl_certificate.clone();
+        // let cert_key_file = config.ssl_certificate_key.clone();
+
         let server = GatewayServer::new(config);
-        
+
+        debug!("Starting http gateway edge server");
         let make_svc = make_service_fn(|socket: &AddrStream| {
             let remote_addr = socket.remote_addr();
             let handler = server.make_service(remote_addr);
@@ -49,10 +57,8 @@ async fn main() {
                 Ok::<_, Infallible>(handler)
             }
         });
-
-        // start listening
-        let server = Server::bind(&addr).serve(make_svc);
-
-        server.await.unwrap();
+        let server = Server::bind(&addr)
+                .serve(make_svc);
+        server.await.expect("Server failed to start");
     }
 }

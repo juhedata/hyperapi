@@ -11,13 +11,12 @@ use pin_project::pin_project;
 pub struct AuthRequest {
     pub request: Request<Body>,
     pub service_id: String,
-    pub result: oneshot::Sender<Result<(String, Request<Body>), anyhow::Error>>,
+    pub result: oneshot::Sender<Result<Request<Body>, anyhow::Error>>,
 }
 
 #[derive(Debug)]
 pub struct ServiceRequest {
     pub service: String,
-    pub app_key: String,
     pub request: Request<Body>,
     pub result: oneshot::Sender<Response<Body>>,
 }
@@ -70,11 +69,10 @@ impl Service<Request<Body>> for RequestHandler {
             }).await.unwrap();
 
             let resp = match rx.await.unwrap() {
-                Ok((app_key, request)) => {
+                Ok(request) => {
                     let (tx, rx) = oneshot::channel();
                     req_tx.send(ServiceRequest {
                         service: service_id.clone(),
-                        app_key: app_key.clone(),
                         request: request,
                         result: tx,
                     }).await.unwrap();

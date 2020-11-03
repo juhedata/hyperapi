@@ -31,5 +31,5 @@ tokio-rustls = "0.14"
 base64 = "0.13"
 jsonwebtoken = "7"
 regex = "1.4"
-
+env_logger = "0.8"
 

@@ -2,7 +2,8 @@
 use tokio::sync::mpsc;
 use std::net::SocketAddr;
 use crate::config::GatewayConfig;
-use crate::proxy::{ AuthRequest, ServiceRequest, RequestHandler, ServiceHandler, AuthHandler };
+use crate::proxy::{ AuthRequest, ServiceRequest, RequestHandler, ServiceHandler };
+use crate::auth::AuthHandler;
 
 
 pub struct GatewayServer {

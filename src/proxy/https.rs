@@ -1,58 +1,48 @@
 use std::pin::Pin;
 use std::task::{Poll, Context};
+use tokio_rustls::server::TlsStream;
+use tokio_rustls::TlsAcceptor;
+use rustls::internal::pemfile;
 use tokio::net::{TcpListener, TcpStream};
 use futures_util::{
     future::TryFutureExt,
     stream::{Stream, StreamExt, TryStreamExt},
 };
-use tokio_rustls::server::TlsStream;
-use tokio_rustls::TlsAcceptor;
-use rustls::internal::pemfile;
 
 
-pub struct HyperAcceptor<'a> {
+struct HyperAcceptor<'a> {
     acceptor: Pin<Box<dyn Stream<Item = Result<TlsStream<TcpStream>, std::io::Error>> + 'a>>,
 }
 
 impl<'a> HyperAcceptor<'a> {
-    pub async fn wrap(tcp: &'a mut TcpListener, cert_file: String, key_file: String, ) -> std::io::Result<HyperAcceptor<'a>> {
-
-        // Build TLS configuration.
+    pub fn bind(tcp: TcpListener, cert_file: String, cert_key_file: String) -> std::io::Result<Self> {
         let tls_cfg = {
-            // Load public certificate.
             let certs = load_certs(&cert_file)?;
-            // Load private key.
-            let key = load_private_key(&key_file)?;
-            // Do not use client certificate authentication.
+            let key = load_private_key(&cert_key_file)?;
             let mut cfg = rustls::ServerConfig::new(rustls::NoClientAuth::new());
-            // Select a certificate to use.
             cfg.set_single_cert(certs, key)
                 .map_err(|e| error(format!("{}", e)))?;
             // Configure ALPN to accept HTTP/2, HTTP/1.1 in that order.
             cfg.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
             std::sync::Arc::new(cfg)
         };
-
-        // Create a TCP listener via tokio.
         let tls_acceptor = TlsAcceptor::from(tls_cfg);
-        // Prepare a long-running future stream to accept and serve cients.
+
         let incoming_tls_stream = tcp
-            .incoming()
             .map_err(|e| error(format!("Incoming failed: {:?}", e)))
             .and_then(move |s| {
-                tls_acceptor.accept(s).map_err(|e| {
-                    println!("[!] Voluntary server halt due to client-connection error...");
-                    // Errors could be handled here, instead of server aborting.
-                    // Ok(None)
-                    error(format!("TLS Error: {:?}", e))
-                })
+                tls_acceptor.accept(s)
+                    .map_err(|e| {
+                        println!("[!] Voluntary server halt due to client-connection error...");
+                        error(format!("TLS Error: {:?}", e))
+                    })
             })
             .boxed();
+
         Ok(HyperAcceptor {
             acceptor: incoming_tls_stream,
         })
     }
-
 }
 
 impl hyper::server::accept::Accept for HyperAcceptor<'_> {
@@ -93,6 +83,7 @@ fn load_private_key(filename: &String) -> std::io::Result<rustls::PrivateKey> {
     }
     Ok(keys[0].clone())
 }
+
 
 fn error(err: String) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, err)

@@ -18,7 +18,7 @@ apihub:
       app_key: 1345432321
       app_secret: 4535324321
       ip_whitelist: ["192.168.0.0/16"]
-      filters:
+      services:
         account_service:
           - type: RateLimit
             path_pattern: ".*"
@@ -32,8 +32,7 @@ apihub:
       api: juhe_account
       api_type: rest
       auth:
-        type: JWT               # basic | jwt | oauth2
-        identity: "sub"
+        type: AppKey
       timeout: 3000
       log_detail: false
       upstreams:

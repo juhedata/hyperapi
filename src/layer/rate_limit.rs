@@ -15,7 +15,8 @@ pub struct RateLimitService<S> {
     inner: S,
 }
 
-struct TokenBucket {
+#[derive(Clone)]
+pub struct TokenBucket {
     pub interval: Duration,
     pub limit: u64,
     pub capacity: u64,
