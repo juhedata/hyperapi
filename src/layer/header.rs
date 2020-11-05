@@ -1,19 +1,18 @@
 use hyper::{Response, Request, Body};
 use hyper::header::{HeaderName, HeaderValue};
-use crate::config::HeaderSetting;
+use crate::config::{HeaderSetting, RequestMatcher};
 use std::collections::HashMap;
 use tower::Service;
 use anyhow::Error;
 use std::future::Future;
 use std::task::{Context, Poll};
-use regex::Regex;
 use pin_project::pin_project;
 use std::pin::Pin;
 use futures::ready;
 
 
 pub struct HeaderService<S> {
-    settings: Vec<(Regex, HeaderOperation)>,
+    settings: Vec<(RequestMatcher, HeaderOperation)>,
     inner: S,
 }
 
@@ -28,9 +27,9 @@ pub struct HeaderOperation {
 
 impl<S> HeaderService<S> {
     pub fn new(settings: Vec<HeaderSetting>, inner: S) -> HeaderService<S> {
-        let mut st: Vec<(Regex, HeaderOperation)> = Vec::new();
+        let mut st: Vec<(RequestMatcher, HeaderOperation)> = Vec::new();
         for s in settings.iter() {
-            let pt = Regex::new(&s.path_pattern).unwrap();
+            let pt = RequestMatcher::new(s.methods.clone(), s.path_pattern.clone());
             let op = HeaderOperation {
                 request_inject: s.request_inject.clone(),
                 request_remove: s.request_remove.clone(),
@@ -64,11 +63,9 @@ impl<S> Service<Request<Body>> for HeaderService<S>
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let (mut head, body) = req.into_parts();
-        let path = head.uri.path().strip_prefix("/").unwrap();
-        let (_service_id, path_left) = path.split_at(path.find("/").unwrap());
         let mut resp_ops: Vec<HeaderOperation> = Vec::new();
         for (p, s) in self.settings.iter() {
-            if !p.is_match(path_left) {
+            if !p.is_match(&head.method, &head.uri) {
                 continue;
             }
             for k in s.request_remove.iter() {

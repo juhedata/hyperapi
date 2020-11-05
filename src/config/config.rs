@@ -53,6 +53,7 @@ pub struct RateLimit {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RateLimitSetting {
+    pub methods: String,
     pub path_pattern: String,
     pub limits: Vec<RateLimit>
 }
@@ -60,6 +61,7 @@ pub struct RateLimitSetting {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HeaderSetting {
+    pub methods: String,
     pub path_pattern: String,
     pub request_inject: HashMap<String, String>,
     pub request_remove: Vec<String>,
@@ -70,6 +72,7 @@ pub struct HeaderSetting {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CorsSetting {
+    pub methods: String,
     pub path_pattern: String,
     pub public: bool,
 }

@@ -1,17 +1,16 @@
 use hyper::{Response, Request, Body};
-use crate::config::{RateLimitSetting, RateLimit};
+use crate::config::{RateLimitSetting, RateLimit, RequestMatcher};
 use tower::Service;
 use anyhow::{Error, anyhow};
 use std::future::Future;
 use std::task::{Context, Poll};
-use regex::Regex;
 use std::pin::Pin;
 use std::time::Instant;
 use std::time::Duration;
 
 
 pub struct RateLimitService<S> {
-    limits: Vec<(Regex, Vec<TokenBucket>)>,
+    limits: Vec<(RequestMatcher, Vec<TokenBucket>)>,
     inner: S,
 }
 
@@ -54,11 +53,11 @@ impl TokenBucket {
 
 impl<S> RateLimitService<S> {
     pub fn new(settings: Vec<RateLimitSetting>, inner: S) -> RateLimitService<S> {
-        let mut limits: Vec<(Regex, Vec<TokenBucket>)> = Vec::new();
+        let mut limits: Vec<(RequestMatcher, Vec<TokenBucket>)> = Vec::new();
         for s in settings.iter() {
-            let re = Regex::new(&s.path_pattern).unwrap();
+            let rm = RequestMatcher::new(s.methods.clone(), s.path_pattern.clone());
             let bucket = s.limits.iter().map(|l| TokenBucket::new(l)).collect();
-            limits.push((re, bucket));
+            limits.push((rm, bucket));
         }
 
         RateLimitService {
@@ -85,21 +84,23 @@ impl<S> Service<Request<Body>> for RateLimitService<S>
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let now = Instant::now();
-        let path = req.uri().path().strip_prefix("/").unwrap();
-        let (_service_id, path_left) = path.split_at(path.find("/").unwrap());
+        let mut pass = true;
         for (pattern, limits) in self.limits.iter_mut() {
-            if !pattern.is_match(path_left) {
-                continue;
-            }
-            for rl in limits.iter_mut() {
-                if rl.check(now) == false {
-                    return Box::pin(async {
-                        Err(anyhow!("Rate limited"))
-                    })
+            if pattern.is_match(&req.method(), &req.uri()) {
+                for rl in limits.iter_mut() {
+                    if !rl.check(now) {
+                        pass = false; 
+                    }
                 }
             }
         }
-        self.inner.call(req)
+        if pass {
+            self.inner.call(req)
+        } else {
+            Box::pin(async {
+                Err(anyhow!("Rate limited"))
+            })
+        }
     }
 
 }

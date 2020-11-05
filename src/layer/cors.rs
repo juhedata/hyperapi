@@ -2,8 +2,7 @@ use tower::Service;
 use hyper::{Request, Response, Body, StatusCode, http::HeaderValue};
 use std::task::{Context, Poll};
 use std::future::Future;
-use crate::config::CorsSetting;
-use regex::Regex;
+use crate::config::{CorsSetting, RequestMatcher};
 use pin_project::pin_project;
 use std::pin::Pin;
 use futures::ready;
@@ -11,7 +10,7 @@ use anyhow::Error;
 
 
 pub struct CorsService<S> {
-    pub patterns: Vec<Regex>,
+    pub patterns: Vec<RequestMatcher>,
     pub inner: S,
 }
 
@@ -24,7 +23,7 @@ impl<S> CorsService<S> {
             if !s.public {
                 continue;
             }
-            let p = Regex::new(&s.path_pattern).unwrap();
+            let p = RequestMatcher::new(s.methods.clone(), s.path_pattern.clone());
             patterns.push(p);
         }
         CorsService { patterns, inner }
@@ -48,10 +47,8 @@ impl<S> Service<Request<Body>> for CorsService<S>
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let mut public = false;
-        let path = req.uri().path().strip_prefix("/").unwrap();
-        let (_service_id, path_left) = path.split_at(path.find("/").unwrap());
         for p in self.patterns.iter() {
-            if p.is_match(path_left) {
+            if p.is_match(&req.method(), &req.uri()) {
                 public = true;
                 break;
             }
