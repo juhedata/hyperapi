@@ -1,5 +1,5 @@
 use tokio;
-use log::*;
+use tracing::{event, Level};
 use clap::{App, Arg};
 use hyper::{Server, Uri};
 use hyper::server::conn::AddrStream;
@@ -9,8 +9,9 @@ use std::convert::Infallible;
 use serde::{Serialize, Deserialize};
 use hyperapi::config::{GatewayConfig, config_poll};
 use hyperapi::proxy::GatewayServer;
-use env_logger;
 use std::sync::{Arc, Mutex};
+use tracing_subscriber;
+
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ServerConfigFile {
@@ -20,7 +21,7 @@ struct ServerConfigFile {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
 
     let matches = App::new("apihub.rs")
           .version("0.1")
@@ -39,7 +40,7 @@ async fn main() {
 
     if is_testing {
         // todo
-        println!("Validating config file");
+        event!(Level::INFO, "Validating config file");
     } else {
         let content = tokio::fs::read_to_string(config_file).await.expect("Failed to read config file");
         let config_file = serde_yaml::from_str::<ServerConfigFile>(&content).expect("Failed to parse config file");
@@ -60,7 +61,7 @@ async fn main() {
             });
         }
 
-        debug!("Starting http gateway edge server");
+        event!(Level::INFO, "Starting http gateway edge server");
         let make_svc = make_service_fn(|socket: &AddrStream| {
             let remote_addr = socket.remote_addr();
             let handler = {

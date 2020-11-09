@@ -16,7 +16,6 @@ impl GatewayServer {
 
     pub fn new(config: GatewayConfig) -> Self {
         let (auth_tx, req_tx) = Self::start_worker(&config.apps, &config.services);
-
         GatewayServer { auth_tx, req_tx }
     }
 

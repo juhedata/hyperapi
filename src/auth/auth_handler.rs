@@ -1,4 +1,4 @@
-use log::*;
+use tracing::{Level, event};
 use hyper::{Request, Body};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -54,12 +54,12 @@ impl AuthHandler {
 
 
     pub async fn auth_worker(&mut self, mut rx: mpsc::Receiver<AuthRequest>) {
-        debug!("start auth handler");
+        event!(Level::DEBUG, "start auth handler");
         while let Some(x) = rx.recv().await {
             let AuthRequest {service_id, mut request, result} = x;
             if let Some(auth) = self.services.get(&service_id) {
                 let app_key = Self::verify_token(&request, auth.clone(), self.apps.clone()).await;
-                debug!("app_key {:?}", app_key);
+                event!(Level::DEBUG, "app_key {:?}", app_key);
                 let client_filter = match app_key {
                     Some(key) => {
                         let cliennt_tuple = self.apps.get(&key);

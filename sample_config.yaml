@@ -21,6 +21,7 @@ apihub:
       services:
         account_service:
           - type: RateLimit
+            methods: "GET,POST"
             path_pattern: ".*"
             limits:
               - {duration: 1, limit: 10, burst: 100}
@@ -39,6 +40,7 @@ apihub:
         - { target: "http://127.0.0.1:8000/" }
       filters:
         - type: Header
+          methods: "GET,POST"
           path_pattern: ".*"
           request_inject:
             X-Authentication: "source-authenticate-token"
@@ -50,6 +52,7 @@ apihub:
             - "etag"
             - "cache_control"
         - type: RateLimit
+          methods: "GET,POST"
           path_pattern: ".*"
           limits:
             - {duration: 1, limit: 100, burst: 500}
