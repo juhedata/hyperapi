@@ -1,10 +1,10 @@
 use std::{collections::HashMap, pin::Pin};
 use hyper::{Request, Response, Body};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, broadcast};
 use tokio::sync::oneshot;
 use std::future::Future;
 
-use crate::config::ClientId;
+use crate::config::{ClientId, ConfigUpdate};
 
 
 #[derive(Debug)]
@@ -30,8 +30,10 @@ pub enum MiddlewareRequest {
 
 pub trait Middleware {
     
-    fn worker(&mut self) -> Pin<Box<dyn Future<Output=()> + Send>>;
+    fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>>;
 
+    fn config_update(&mut self, update: ConfigUpdate);
+    
 }
 
 
@@ -58,6 +60,33 @@ impl RequestContext {
         String::from(service_id)
     }
 }
+
+
+pub async fn start_middleware<MW>(mut tasks: mpsc::Receiver<MiddlewareRequest>, mut updates: broadcast::Receiver<ConfigUpdate>) 
+where MW: Middleware + Default
+{
+    let mut mw = MW::default();
+    
+    tokio::select! {
+        task = tasks.recv() => {
+            match task {
+                Some(x) => {
+                    mw.work(x).await;
+                },
+                None => {},
+            }
+        },
+        update = updates.recv() => {
+            match update {
+                Ok(c) => {
+                    mw.config_update(c);
+                },
+                Err(_e) => {},
+            }
+        },
+    }
+}
+
 
 pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stack: Vec<mpsc::Sender<MiddlewareRequest>>)
         -> Pin<Box<dyn Future<Output=Response<Body>> + Send>> 

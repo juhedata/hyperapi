@@ -1,60 +1,62 @@
 use std::collections::HashMap;
 use hyper::{Request, Response, Body};
-use tokio::sync::mpsc;
 use std::time::{Instant, Duration};
-use crate::{middleware::middleware::MiddlewareRequest, config::RateLimitSetting};
+use std::future::Future;
+use std::pin::Pin;
+use crate::{config::ConfigUpdate, middleware::MiddlewareRequest};
 use crate::config::RateLimit;
 
-use super::middleware::MwPreRequest;
+use super::{Middleware, middleware::MwPreRequest};
 
 
 #[derive(Debug)]
 pub struct RateLimitMiddleware {
-    pub tx: mpsc::Sender<MiddlewareRequest>,
-    rx: mpsc::Receiver<MiddlewareRequest>,
     limiter: HashMap<String, Vec<TokenBucket>>,
 }
 
+impl Default for RateLimitMiddleware {
+    fn default() -> Self {
+        RateLimitMiddleware { limiter: HashMap::new() }
+    }
+}
 
-impl RateLimitMiddleware {
 
-    pub fn new(config: HashMap<String, RateLimitSetting>) -> Self {
-        let (tx, rx) = mpsc::channel(10);
-        let limiter = HashMap::new();
-        RateLimitMiddleware { tx, rx, limiter }
+impl Middleware for RateLimitMiddleware {
+
+    fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        let now = Instant::now();
+        match task {
+            MiddlewareRequest::Request(MwPreRequest { context, request, result}) => {
+                let limit_key = extract_ratelimit_key(&request);
+                match self.limiter.get_mut(&limit_key) {
+                    Some(buckets) => {
+                        let mut pass = true;
+                        for limit in buckets.iter_mut() {
+                            if !limit.check(now) {
+                                pass = false;
+                            }
+                        }
+                        if pass {
+                            result.send(Ok((request, context))).unwrap();
+                        } else {
+                            let err = Response::new(Body::from("Ratelimit"));
+                            result.send(Err(err)).unwrap();
+                        }
+                    },
+                    None => {
+                        result.send(Ok((request, context))).unwrap();
+                    },
+                };
+                Box::pin(async {})
+            },
+            MiddlewareRequest::Response(resp) => Box::pin(async {
+                resp.result.send(resp.response).unwrap();
+            }),
+        }
     }
 
-    pub async fn worker(&mut self) {
-        while let Some(x) = self.rx.recv().await {
-            let now = Instant::now();
-            match x {
-                MiddlewareRequest::Request(MwPreRequest { context, request, result}) => {
-                    let limit_key = extract_ratelimit_key(&request);
-                    match self.limiter.get_mut(&limit_key) {
-                        Some(buckets) => {
-                            let mut pass = true;
-                            for limit in buckets.iter_mut() {
-                                if !limit.check(now) {
-                                    pass = false;
-                                }
-                            }
-                            if pass {
-                                result.send(Ok((request, context))).unwrap();
-                            } else {
-                                let err = Response::new(Body::from("Ratelimit"));
-                                result.send(Err(err)).unwrap();
-                            }
-                        },
-                        None => {
-                            result.send(Ok((request, context))).unwrap();
-                        },
-                    }
-                },
-                MiddlewareRequest::Response(resp) => {
-                    resp.result.send(resp.response).unwrap();
-                },
-            }
-        }
+    fn config_update(&mut self, update: ConfigUpdate) {
+        todo!()
     }
 
 }

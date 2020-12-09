@@ -1,74 +1,60 @@
 use hyper::{Request, Response, Body};
 use std::collections::HashMap;
-use tokio::sync::mpsc;
+use std::pin::Pin;
+use std::future::Future;
 use std::sync::Arc;
 use base64::decode as base64_decode;
 use jsonwebtoken as jwt;
 use serde::{Serialize, Deserialize};
 use crate::config::*;
-use crate::middleware::MiddlewareRequest;
-use super::middleware::MwPreRequest;
+use crate::middleware::{MwPreRequest, Middleware, MiddlewareRequest};
 
 
 
 #[derive(Debug)]
 pub struct AuthMiddleware {
-    pub tx: mpsc::Sender<MiddlewareRequest>,
-    rx: mpsc::Receiver<MiddlewareRequest>,
     clients: Arc<HashMap<String, ClientId>>,
     service_auth: HashMap<String, AuthSetting>,
 }
 
+impl Default for AuthMiddleware {
+    fn default() -> Self {
+        AuthMiddleware { clients: Arc::new(HashMap::new()), service_auth: HashMap::new() }
+    }
+}
 
-impl AuthMiddleware {
 
-    pub fn new(apps_conf: &Vec<ClientInfo>, services_conf: &Vec<ServiceInfo>) -> Self {
-        let mut clients = HashMap::new();
-        for c in apps_conf.iter() {
-            let cid = ClientId {
-                app_id: c.app_id.clone(),
-                app_key: c.app_key.clone(),
-                app_secret: c.app_secret.clone(),
-            };
-            clients.insert(c.app_key.clone(), cid);
+impl Middleware for AuthMiddleware {
+
+
+    fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        match task {
+            MiddlewareRequest::Request(MwPreRequest{mut context,  request, result}) => {
+                let auth_type = self.service_auth.get(&context.service_id).unwrap().clone();
+                let clients = Arc::clone(&self.clients);
+                tokio::spawn(async move {
+                    let client_id = verify_token(&request, auth_type, clients).await;
+                    match client_id {
+                        Some(cid) => {
+                            context.client.replace(cid);
+                            result.send(Ok((request, context))).unwrap();
+                        },
+                        None => {
+                            let err = Response::new(Body::from("auth failed"));
+                            result.send(Err(err)).unwrap();
+                        },
+                    }
+                });
+            },
+            MiddlewareRequest::Response(resp) => {
+                resp.result.send(resp.response).unwrap();
+            },
         }
-        let clients = Arc::new(clients);
-
-        let mut service_auth = HashMap::new();
-        for s in services_conf.iter() {
-            service_auth.insert(s.service_id.clone(), s.auth.clone());
-        }
-
-        let (tx, rx) = mpsc::channel(10);
-        AuthMiddleware { tx, rx, clients, service_auth }
+        Box::pin(async {})
     }
 
-    pub async fn worker(&mut self) {
-        while let Some(x) = self.rx.recv().await {
-            match x {
-                MiddlewareRequest::Request(MwPreRequest{mut context,  request, result}) => {
-                    let auth_type = self.service_auth.get(&context.service_id).unwrap().clone();
-                    let clients = Arc::clone(&self.clients);
-                    tokio::spawn(async move {
-                        let client_id = verify_token(&request, auth_type, clients).await;
-                        match client_id {
-                            Some(cid) => {
-                                context.client.replace(cid);
-                                result.send(Ok((request, context))).unwrap();
-                            },
-                            None => {
-                                let err = Response::new(Body::from("auth failed"));
-                                result.send(Err(err)).unwrap();
-                            },
-                        }
-                    });
-                },
-                MiddlewareRequest::Response(resp) => {
-                    resp.result.send(resp.response).unwrap();
-                }
-            }
-            
-        }
+    fn config_update(&mut self, update: crate::config::ConfigUpdate) {
+        todo!()
     }
 
 }

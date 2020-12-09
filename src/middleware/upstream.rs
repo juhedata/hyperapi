@@ -10,10 +10,12 @@ use tower_balance::p2c::Balance;
 use tower_limit::concurrency::ConcurrencyLimit;
 use tower_load_shed::LoadShed;
 use tower_util::BoxService;
-use crate::config::ServiceInfo;
+use std::future::Future;
+use std::pin::Pin;
+use crate::config::{ConfigUpdate, ServiceInfo};
 use crate::middleware::MiddlewareRequest;
 use crate::middleware::proxy::ProxyHandler;
-use super::middleware::MwPreRequest;
+use super::{Middleware, middleware::MwPreRequest};
 
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -21,81 +23,83 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub struct UpstreamMiddleware {
-    pub tx: mpsc::Sender<MiddlewareRequest>,
-    rx: mpsc::Receiver<MiddlewareRequest>,
-    worker_queues: HashMap<String, mpsc::Sender<MiddlewareRequest>>,
+    pub worker_queues: HashMap<String, mpsc::Sender<MwPreRequest>>,
 }
 
+impl Default for UpstreamMiddleware {
+    fn default() -> Self {
+        UpstreamMiddleware { worker_queues: HashMap::new() }
+    }
+}
 
 impl UpstreamMiddleware {
 
-    pub fn new(config: &Vec<ServiceInfo>) -> Self {
-        let mut worker_queues: HashMap<String, mpsc::Sender<MiddlewareRequest>> = HashMap::new();
-
-        for c in config.iter() {
-            let (tx, rx) = mpsc::channel::<MiddlewareRequest>(100);
-            let conf = c.clone();
-            tokio::spawn(async move {
-                Self::service_worker(rx, conf).await;
-            });
-            worker_queues.insert(c.service_id.clone(), tx);
-        }
-
-        let (tx, rx) = mpsc::channel(10);
-
-        UpstreamMiddleware { tx, rx, worker_queues }
-    }
-
-    pub async fn worker(&mut self) {
-        while let Some(x) = self.rx.recv().await {
-            match x {
-                MiddlewareRequest::Request(req) => {
-                    if let Some(ch) = self.worker_queues.get_mut(&req.context.service_id) {
-                        ch.send(MiddlewareRequest::Request(req)).await.unwrap();
-                    } else {
-                        let err= Response::new(Body::from("Invalid Service Id"));
-                        req.result.send(Err(err)).unwrap();
-                    }
-                },
-                MiddlewareRequest::Response(resp) => {
-                    resp.result.send(resp.response).unwrap()
-                },
-            }
-        }
-    }
-
-    async fn service_worker(mut rx: mpsc::Receiver<MiddlewareRequest>, conf: ServiceInfo) {
+    async fn service_worker(mut rx: mpsc::Receiver<MwPreRequest>, conf: ServiceInfo) {
         let us: Vec<String> = conf.upstreams.iter().map(|u| u.target.clone()).collect();
         let timeout = Duration::from_millis(conf.timeout);
         let max_conn = 1000;
         let mut service = build_service(us, timeout, max_conn);
 
-        while let Some(x) = rx.recv().await {
-            match x {
-                MiddlewareRequest::Request(MwPreRequest {context: _, request, result }) => {
-                    if let Ok(px) = service.ready_and().await {
-                        let f = px.call(request);
-                        tokio::spawn(async move {
-                            if let Ok(resp) = f.await {
-                                match result.send(Err(resp)) {
-                                    Ok(_) => {},
-                                    Err(_e) => println!("failed to send result"),
-                                }
-                            } else {
-                                let err = Response::new(Body::from("Server Internal Error"));
-                                result.send(Err(err)).unwrap();
-                            }
-                        });
+        while let Some(MwPreRequest {context: _, request, result }) = rx.recv().await {
+            if let Ok(px) = service.ready_and().await {
+                let f = px.call(request);
+                tokio::spawn(async move {
+                    if let Ok(resp) = f.await {
+                        match result.send(Err(resp)) {
+                            Ok(_) => {},
+                            Err(_e) => println!("failed to send result"),
+                        }
+                    } else {
+                        let err = Response::new(Body::from("Server Internal Error"));
+                        result.send(Err(err)).unwrap();
                     }
-                },
-                MiddlewareRequest::Response(post) => {
-                    post.result.send(post.response).unwrap()
-                },
+                });
             }
-            
         }
     }
 
+}
+
+
+impl Middleware for UpstreamMiddleware {
+
+    fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        match task {
+            MiddlewareRequest::Request(req) => {
+                if let Some(ch) = self.worker_queues.get_mut(&req.context.service_id) {
+                    let mut task_ch = ch.clone();
+                    Box::pin(async move {
+                        task_ch.send(req).await.unwrap();
+                    })
+                } else {
+                    Box::pin(async {
+                        let err= Response::new(Body::from("Invalid Service Id"));
+                        req.result.send(Err(err)).unwrap();
+                    })
+                }
+            },
+            MiddlewareRequest::Response(resp) => Box::pin(async {
+                resp.result.send(resp.response).unwrap();
+            }),
+        }
+    }
+
+    fn config_update(&mut self, update: ConfigUpdate) {
+        match update {
+            ConfigUpdate::ServiceUpdate(conf) => {
+                let (tx, rx) = mpsc::channel(10);
+                let service_id = conf.service_id.clone();
+                tokio::spawn(async move {
+                    Self::service_worker(rx, conf).await;
+                });
+                self.worker_queues.insert(service_id, tx);
+            },
+            ConfigUpdate::ServiceRemove(sid) => {
+                self.worker_queues.remove(&sid);
+            },
+            _ => {},
+        }
+    }
 }
 
 
