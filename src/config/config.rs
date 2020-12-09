@@ -87,6 +87,15 @@ pub enum FilterSetting {
 }
 
 
+
+#[derive(Debug, Clone)]
+pub struct ClientId {
+    pub app_id: String,
+    pub app_key: String,
+    pub app_secret: String,
+}
+
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppKeyAuth {
     pub header_name: Option<String>,
@@ -118,3 +127,5 @@ pub enum AuthSetting {
     OAuth2(OAuth2Auth),
     JWT(JwtAuth),
 }
+
+

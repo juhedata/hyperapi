@@ -1,20 +1,73 @@
-use hyper::{Response, Request, Body};
-use crate::config::{RateLimitSetting, RateLimit, RequestMatcher};
-use tower::Service;
-use anyhow::{Error, anyhow};
-use std::future::Future;
-use std::task::{Context, Poll};
-use std::pin::Pin;
-use std::time::Instant;
-use std::time::Duration;
+use std::collections::HashMap;
+use hyper::{Request, Response, Body};
+use tokio::sync::mpsc;
+use std::time::{Instant, Duration};
+use crate::{middleware::middleware::MiddlewareRequest, config::RateLimitSetting};
+use crate::config::RateLimit;
+
+use super::middleware::MwPreRequest;
 
 
-pub struct RateLimitService<S> {
-    limits: Vec<(RequestMatcher, Vec<TokenBucket>)>,
-    inner: S,
+#[derive(Debug)]
+pub struct RateLimitMiddleware {
+    pub tx: mpsc::Sender<MiddlewareRequest>,
+    rx: mpsc::Receiver<MiddlewareRequest>,
+    limiter: HashMap<String, Vec<TokenBucket>>,
 }
 
-#[derive(Clone)]
+
+impl RateLimitMiddleware {
+
+    pub fn new(config: HashMap<String, RateLimitSetting>) -> Self {
+        let (tx, rx) = mpsc::channel(10);
+        let limiter = HashMap::new();
+        RateLimitMiddleware { tx, rx, limiter }
+    }
+
+    pub async fn worker(&mut self) {
+        while let Some(x) = self.rx.recv().await {
+            let now = Instant::now();
+            match x {
+                MiddlewareRequest::Request(MwPreRequest { context, request, result}) => {
+                    let limit_key = extract_ratelimit_key(&request);
+                    match self.limiter.get_mut(&limit_key) {
+                        Some(buckets) => {
+                            let mut pass = true;
+                            for limit in buckets.iter_mut() {
+                                if !limit.check(now) {
+                                    pass = false;
+                                }
+                            }
+                            if pass {
+                                result.send(Ok((request, context))).unwrap();
+                            } else {
+                                let err = Response::new(Body::from("Ratelimit"));
+                                result.send(Err(err)).unwrap();
+                            }
+                        },
+                        None => {
+                            result.send(Ok((request, context))).unwrap();
+                        },
+                    }
+                },
+                MiddlewareRequest::Response(resp) => {
+                    resp.result.send(resp.response).unwrap();
+                },
+            }
+        }
+    }
+
+}
+
+
+fn extract_ratelimit_key(req: &Request<Body>) -> String {
+
+    todo!()
+}
+
+
+
+#[derive(Debug, Clone)]
 pub struct TokenBucket {
     pub interval: Duration,
     pub limit: u64,
@@ -23,7 +76,9 @@ pub struct TokenBucket {
     tokens: u64,
 }
 
+
 impl TokenBucket {
+
     pub fn new(limit: &RateLimit) -> Self {
         TokenBucket {
             interval: Duration::from_secs(limit.duration as u64),
@@ -51,59 +106,7 @@ impl TokenBucket {
 }
 
 
-impl<S> RateLimitService<S> {
-    pub fn new(settings: Vec<RateLimitSetting>, inner: S) -> RateLimitService<S> {
-        let mut limits: Vec<(RequestMatcher, Vec<TokenBucket>)> = Vec::new();
-        for s in settings.iter() {
-            let rm = RequestMatcher::new(s.methods.clone(), s.path_pattern.clone());
-            let bucket = s.limits.iter().map(|l| TokenBucket::new(l)).collect();
-            limits.push((rm, bucket));
-        }
 
-        RateLimitService {
-            limits,
-            inner,
-        }
-    }
-}
-
-
-impl<S> Service<Request<Body>> for RateLimitService<S>
-    where S: Service<Request<Body>, 
-        Error=Error,
-        Response=Response<Body>, 
-        Future=Pin<Box<dyn Future<Output=Result<Response<Body>, Error>> + Send + 'static>>>
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-    
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let now = Instant::now();
-        let mut pass = true;
-        for (pattern, limits) in self.limits.iter_mut() {
-            if pattern.is_match(&req.method(), &req.uri()) {
-                for rl in limits.iter_mut() {
-                    if !rl.check(now) {
-                        pass = false; 
-                    }
-                }
-            }
-        }
-        if pass {
-            self.inner.call(req)
-        } else {
-            Box::pin(async {
-                Err(anyhow!("Rate limited"))
-            })
-        }
-    }
-
-}
 
 
 // impl<S> RedisRateLimitService<S> {

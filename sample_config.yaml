@@ -24,8 +24,8 @@ apihub:
             methods: "GET,POST"
             path_pattern: ".*"
             limits:
-              - {duration: 1, limit: 10, burst: 100}
-              - {duration: 3600, limit: 10000, burst: 10000}
+              - {duration: 1, limit: 100, burst: 100}
+              - {duration: 60, limit: 1000, burst: 10000}
 
   services:
     - service_id: account_service 

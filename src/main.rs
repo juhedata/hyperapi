@@ -7,7 +7,7 @@ use hyper::service::make_service_fn;
 use serde_yaml;
 use std::convert::Infallible;
 use serde::{Serialize, Deserialize};
-use hyperapi::config::{GatewayConfig, config_poll};
+use hyperapi::config::{GatewayConfig};
 use hyperapi::proxy::GatewayServer;
 use std::sync::{Arc, Mutex};
 use tracing_subscriber;
@@ -46,20 +46,12 @@ async fn main() {
         let config_file = serde_yaml::from_str::<ServerConfigFile>(&content).expect("Failed to parse config file");
         let config = config_file.apihub;
         let addr = config.listen.parse().expect("Invalid listen address");
-        let config_source = config.config_source.clone();
+        // let config_source = config.config_source.clone();
         // let cert_file = config.ssl_certificate.clone();
         // let cert_key_file = config.ssl_certificate_key.clone();
 
         let server = GatewayServer::new(config);
         let server = Arc::new(Mutex::new(server));
-
-        if let Some(source) = config_source {
-            let s = server.clone();
-            tokio::spawn(async move {
-                let source_uri = source.parse::<Uri>().unwrap();
-                config_poll(source_uri, s).await
-            });
-        }
 
         event!(Level::INFO, "Starting http gateway edge server");
         let make_svc = make_service_fn(|socket: &AddrStream| {

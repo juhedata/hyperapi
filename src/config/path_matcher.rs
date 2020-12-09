@@ -1,7 +1,7 @@
 use hyper::{Uri, Method};
 
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct RequestMatcher {
     methods: Vec<String>,
     path_pattern: regex::Regex,
