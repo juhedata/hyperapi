@@ -1,17 +1,15 @@
 use std::collections::HashMap;
-use hyper::{Request, Response, Body};
+use hyper::{Response, Body};
 use std::time::{Instant, Duration};
 use std::future::Future;
 use std::pin::Pin;
-use crate::{config::ConfigUpdate, middleware::MiddlewareRequest};
-use crate::config::RateLimit;
-
-use super::{Middleware, middleware::MwPreRequest};
+use crate::middleware::{Middleware, MwPreRequest, MiddlewareRequest};
+use crate::config::{ConfigUpdate, FilterSetting, RateLimit};
 
 
 #[derive(Debug)]
 pub struct RateLimitMiddleware {
-    limiter: HashMap<String, Vec<TokenBucket>>,
+    limiter: HashMap<String, HashMap<String, Vec<TokenBucket>>>,
 }
 
 impl Default for RateLimitMiddleware {
@@ -27,8 +25,15 @@ impl Middleware for RateLimitMiddleware {
         let now = Instant::now();
         match task {
             MiddlewareRequest::Request(MwPreRequest { context, request, result}) => {
-                let limit_key = extract_ratelimit_key(&request);
-                match self.limiter.get_mut(&limit_key) {
+                let service_id = context.service_id.clone();
+                let client = context.client.clone();
+                let setting = client
+                    .map(|c| self.limiter.get_mut(&c.app_key))
+                    .flatten()
+                    .map(|sl| sl.get_mut(&service_id))
+                    .flatten();
+
+                match setting {
                     Some(buckets) => {
                         let mut pass = true;
                         for limit in buckets.iter_mut() {
@@ -56,15 +61,33 @@ impl Middleware for RateLimitMiddleware {
     }
 
     fn config_update(&mut self, update: ConfigUpdate) {
-        todo!()
+        match update {
+            ConfigUpdate::ClientUpdate(client) => {
+                let mut limits = HashMap::new();
+                for (service_id, filters) in client.services {
+                    let mut buckets: Vec<TokenBucket> = Vec::new();
+                    for fs in filters {
+                        match fs {
+                            FilterSetting::RateLimit(s) => {
+                                let b = s.limits.iter().map(|rl| TokenBucket::new(rl));
+                                buckets.extend(b);
+                            },
+                            _ => {},
+                        }
+                    }
+                    if buckets.len() > 0 {
+                        limits.insert(service_id, buckets);
+                    }
+                }
+                self.limiter.insert(client.app_key.clone(), limits);
+            },
+            ConfigUpdate::ClientRemove(app_key) => {
+                self.limiter.remove(&app_key);
+            },
+            _ => {},
+        }
     }
 
-}
-
-
-fn extract_ratelimit_key(req: &Request<Body>) -> String {
-
-    todo!()
 }
 
 

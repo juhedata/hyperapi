@@ -59,7 +59,7 @@ impl GatewayServer {
         stack.push(tx);
 
         // poll config update
-        let mut config_source = ConfigSource::new(config);
+        let mut config_source = ConfigSource { config };
         tokio::spawn(async move {
             config_source.watch(conf_tx).await
         });

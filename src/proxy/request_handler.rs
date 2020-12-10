@@ -1,5 +1,5 @@
 use hyper::{Request, Response, Body};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tower::Service;
 use std::future::Future;
 use std::pin::Pin;
@@ -24,7 +24,7 @@ impl Service<Request<Body>> for RequestHandler {
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let stack = self.stack.clone();
-        let mut context = RequestContext::new(&req);
+        let context = RequestContext::new(&req);
         let fut = middleware_chain(req, context, stack);
         Box::pin(async {
             let resp = fut.await;

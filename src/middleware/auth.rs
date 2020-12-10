@@ -2,7 +2,6 @@ use hyper::{Request, Response, Body};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::future::Future;
-use std::sync::Arc;
 use base64::decode as base64_decode;
 use jsonwebtoken as jwt;
 use serde::{Serialize, Deserialize};
@@ -13,13 +12,13 @@ use crate::middleware::{MwPreRequest, Middleware, MiddlewareRequest};
 
 #[derive(Debug)]
 pub struct AuthMiddleware {
-    clients: Arc<HashMap<String, ClientId>>,
+    clients: HashMap<String, ClientId>,
     service_auth: HashMap<String, AuthSetting>,
 }
 
 impl Default for AuthMiddleware {
     fn default() -> Self {
-        AuthMiddleware { clients: Arc::new(HashMap::new()), service_auth: HashMap::new() }
+        AuthMiddleware { clients: HashMap::new(), service_auth: HashMap::new() }
     }
 }
 
@@ -31,7 +30,7 @@ impl Middleware for AuthMiddleware {
         match task {
             MiddlewareRequest::Request(MwPreRequest{mut context,  request, result}) => {
                 let auth_type = self.service_auth.get(&context.service_id).unwrap().clone();
-                let clients = Arc::clone(&self.clients);
+                let clients = self.clients.clone();
                 tokio::spawn(async move {
                     let client_id = verify_token(&request, auth_type, clients).await;
                     match client_id {
@@ -53,13 +52,33 @@ impl Middleware for AuthMiddleware {
         Box::pin(async {})
     }
 
-    fn config_update(&mut self, update: crate::config::ConfigUpdate) {
-        todo!()
+    fn config_update(&mut self, update: ConfigUpdate) {
+        match update {
+            ConfigUpdate::ServiceUpdate(s) => {
+                let auth_type = s.auth.clone();
+                self.service_auth.insert(s.service_id.clone(), auth_type);
+            },
+            ConfigUpdate::ServiceRemove(sid) => {
+                self.service_auth.remove(&sid);
+            },
+            ConfigUpdate::ClientUpdate(c) => {
+                let app_key = c.app_key.clone();
+                let cid = ClientId {
+                    app_id: c.app_id,
+                    app_key: c.app_key,
+                    app_secret: c.app_secret,
+                };
+                self.clients.insert(app_key, cid);
+            },
+            ConfigUpdate::ClientRemove(cid) => {
+                self.clients.remove(&cid);
+            },
+        }
     }
 
 }
 
-async fn verify_token(request: &Request<Body>, auth_type: AuthSetting, clients: Arc<HashMap<String, ClientId>>) -> Option<ClientId> {
+async fn verify_token(request: &Request<Body>, auth_type: AuthSetting, clients: HashMap<String, ClientId>) -> Option<ClientId> {
     let client_id: Option<&ClientId> = match auth_type {
         AuthSetting::AppKey(AppKeyAuth { header_name: _header, param_name: _param }) => {
             let token = get_auth_token(request);

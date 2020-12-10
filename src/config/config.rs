@@ -15,7 +15,7 @@ pub struct GatewayConfig {
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ClientInfo {
     pub app_id: String,
     pub app_key: String,
@@ -25,7 +25,7 @@ pub struct ClientInfo {
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ServiceInfo {
     pub service_id: String,
     pub api_type: String,
@@ -36,14 +36,14 @@ pub struct ServiceInfo {
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Upstream {
     pub target: String,
 
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct RateLimit {
     pub duration: i32,  // ms
     pub limit: i32,
@@ -51,7 +51,7 @@ pub struct RateLimit {
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct RateLimitSetting {
     pub methods: String,
     pub path_pattern: String,
@@ -59,7 +59,7 @@ pub struct RateLimitSetting {
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct HeaderSetting {
     pub methods: String,
     pub path_pattern: String,
@@ -70,7 +70,7 @@ pub struct HeaderSetting {
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CorsSetting {
     pub methods: String,
     pub path_pattern: String,
@@ -78,7 +78,7 @@ pub struct CorsSetting {
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type")]
 pub enum FilterSetting {
     RateLimit(RateLimitSetting),
@@ -88,7 +88,7 @@ pub enum FilterSetting {
 
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClientId {
     pub app_id: String,
     pub app_key: String,
@@ -96,30 +96,30 @@ pub struct ClientId {
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AppKeyAuth {
     pub header_name: Option<String>,
     pub param_name: Option<String>,
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct BasicAuth {}
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct OAuth2Auth {
     pub token_verify_url: String,
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct JwtAuth {
     pub identity: Option<String>,
 }
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type")]
 pub enum AuthSetting {
     AppKey(AppKeyAuth),

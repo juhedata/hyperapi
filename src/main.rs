@@ -1,7 +1,7 @@
 use tokio;
 use tracing::{event, Level};
 use clap::{App, Arg};
-use hyper::{Server, Uri};
+use hyper::Server;
 use hyper::server::conn::AddrStream;
 use hyper::service::make_service_fn;
 use serde_yaml;

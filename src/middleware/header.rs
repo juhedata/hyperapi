@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use hyper::header::{HeaderName, HeaderValue};
 use std::future::Future;
 use std::pin::Pin;
-use super::middleware::{MwPostRequest, MwPreRequest, Middleware, MiddlewareRequest};
+use crate::middleware::{MwPostRequest, MwPreRequest, Middleware, MiddlewareRequest};
+use crate::config::{ConfigUpdate, FilterSetting, HeaderSetting};
 
 
 #[derive(Debug, Clone)]
@@ -13,11 +14,41 @@ pub struct HeaderOperation {
     pub response_remove: Vec<String>,
 }
 
+impl Default for HeaderOperation {
+    fn default() -> Self {
+        HeaderOperation {
+            request_inject: HashMap::new(),
+            request_remove: Vec::new(),
+            response_inject: HashMap::new(),
+            response_remove: Vec::new(),
+        }
+    }
+}
+
+
+impl HeaderOperation {
+    pub fn add_setting(&mut self, setting: HeaderSetting) {
+        for (k, v) in setting.request_inject {
+            self.request_inject.insert(k, v);
+        }
+        for h in setting.request_remove {
+            self.request_remove.push(h);
+        }
+        for (k, v) in setting.response_inject {
+            self.response_inject.insert(k, v);
+        }
+        for h in setting.response_remove {
+            self.response_remove.push(h);
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct HeaderMiddleware {
     settings: HashMap<String, HeaderOperation>,
 }
+
 
 impl Default for HeaderMiddleware {
     fn default() -> Self {
@@ -70,7 +101,25 @@ impl Middleware for HeaderMiddleware {
         }
     }
 
-    fn config_update(&mut self, update: crate::config::ConfigUpdate) {
-        todo!()
+    fn config_update(&mut self, update: ConfigUpdate) {
+        match update {
+            ConfigUpdate::ServiceUpdate(service) => {
+                let service_id = service.service_id.clone();
+                let mut ops = HeaderOperation::default();
+                for filter in service.filters {
+                    match filter {
+                        FilterSetting::Header(fs) => {
+                            ops.add_setting(fs);
+                        },
+                        _ => {},
+                    }
+                }
+                self.settings.insert(service_id, ops);
+            },
+            ConfigUpdate::ServiceRemove(sid) => {
+                self.settings.remove(&sid);
+            },
+            _ => {},
+        }
     }
 }
