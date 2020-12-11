@@ -1,4 +1,4 @@
-use hyper::{Request, Response, Body};
+use hyper::{Request, Response, Body, StatusCode};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::future::Future;
@@ -29,21 +29,36 @@ impl Middleware for AuthMiddleware {
     fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
         match task {
             MiddlewareRequest::Request(MwPreRequest{mut context,  request, result}) => {
-                let auth_type = self.service_auth.get(&context.service_id).unwrap().clone();
-                let clients = self.clients.clone();
-                tokio::spawn(async move {
-                    let client_id = verify_token(&request, auth_type, clients).await;
-                    match client_id {
-                        Some(cid) => {
-                            context.client.replace(cid);
-                            result.send(Ok((request, context))).unwrap();
-                        },
-                        None => {
-                            let err = Response::new(Body::from("auth failed"));
-                            result.send(Err(err)).unwrap();
-                        },
-                    }
-                });
+                match self.service_auth.get(&context.service_id) {
+                    Some(auth_type) => {
+                        let auth_type = auth_type.clone();
+                        let clients = self.clients.clone();
+                        tokio::spawn(async move {
+                            let client_id = verify_token(&request, auth_type, clients).await;
+                            match client_id {
+                                Some(cid) => {
+                                    context.client.replace(cid);
+                                    result.send(Ok((request, context))).unwrap();
+                                },
+                                None => {
+                                    let err = Response::builder()
+                                        .status(StatusCode::UNAUTHORIZED)
+                                        .body(Body::from("auth failed"))
+                                        .unwrap();
+                                    result.send(Err(err)).unwrap();
+                                },
+                            }
+                        });
+                    },
+                    None => {
+                        let err = Response::builder()
+                            .status(StatusCode::UNAUTHORIZED)
+                            .body(Body::from("auth failed"))
+                            .unwrap();
+                        result.send(Err(err)).unwrap();
+                    },
+                }
+
             },
             MiddlewareRequest::Response(resp) => {
                 resp.result.send(resp.response).unwrap();

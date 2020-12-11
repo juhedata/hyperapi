@@ -53,11 +53,11 @@ impl ConfigSource {
                 while let Some(update) = http_source.rx.recv().await {
                     updates.send(update).unwrap();
                 }
-            // } else if url.starts_with("etcd") {
-            //     let mut etcd_source = EtcdConfigSource::new(url.clone());
-            //     while let Some(update) = etcd_source.rx.recv().await {
-            //         updates.send(update).unwrap();
-            //     }
+            } else if url.starts_with("etcd") {
+                let mut etcd_source = EtcdConfigSource::new(url.clone());
+                while let Some(update) = etcd_source.rx.recv().await {
+                    updates.send(update).unwrap();
+                }
             } else if url.starts_with(""){
                 panic!("Invalid config source {}", url);
             }
@@ -77,7 +77,7 @@ impl HttpConfigSource {
         tokio::spawn(async move {
             Self::config_updates(uri, Duration::from_secs(30), tx).await;
         });
-        HttpConfigSource { rx: rx }
+        HttpConfigSource { rx }
     }
 
     async fn config_updates(
@@ -171,5 +171,22 @@ impl HttpConfigSource {
 
 
 
+pub struct EtcdConfigSource {
+    pub rx: mpsc::Receiver<ConfigUpdate>,
+}
 
+impl EtcdConfigSource {
+    pub fn new(url: String) -> Self {
+        let (tx, rx) = mpsc::channel(10);
+        tokio::spawn(async move {
+            Self::config_updates(url, tx).await;
+        });
+        EtcdConfigSource { rx }
+    }
 
+    async fn config_updates(_source: String, mut _tx: mpsc::Sender<ConfigUpdate>) {
+        todo!()
+    }
+ }
+
+ 

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use hyper::{Response, Body};
+use hyper::{Response, Body, StatusCode};
 use std::time::{Instant, Duration};
 use std::future::Future;
 use std::pin::Pin;
@@ -44,7 +44,10 @@ impl Middleware for RateLimitMiddleware {
                         if pass {
                             result.send(Ok((request, context))).unwrap();
                         } else {
-                            let err = Response::new(Body::from("Ratelimit"));
+                            let err = Response::builder()
+                                .status(StatusCode::TOO_MANY_REQUESTS)
+                                .body(Body::from("Rate limit"))
+                                .unwrap();
                             result.send(Err(err)).unwrap();
                         }
                     },

@@ -37,7 +37,10 @@ impl Middleware for CorsMiddleware {
                 };
                 
                 if path_match && request.method() == "OPTION" {
-                    let mut resp = Response::builder().status(StatusCode::NO_CONTENT).body(Body::empty()).unwrap();
+                    let mut resp = Response::builder()
+                        .status(StatusCode::NO_CONTENT)
+                        .body(Body::empty())
+                        .unwrap();
                     let headers = resp.headers_mut();
                     headers.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
                     headers.insert("Access-Control-Allow-Methods", HeaderValue::from_static("GET, POST, OPTIONS"));
@@ -45,7 +48,9 @@ impl Middleware for CorsMiddleware {
                     headers.insert("Access-Control-Max-Age", HeaderValue::from_static("1728000"));
                     result.send(Err(resp)).unwrap();
                 } else {
-                    context.args.insert(String::from("CORS"), String::from(""));
+                    if path_match {
+                        context.args.insert(String::from("CORS"), String::from(""));
+                    }
                     result.send(Ok((request, context))).unwrap();
                 }
             },
@@ -76,7 +81,11 @@ impl Middleware for CorsMiddleware {
                         _ => {},
                     }
                 }
-                self.settings.insert(service_id, spec);
+                if spec.len() > 0 {
+                    self.settings.insert(service_id, spec);
+                } else {
+                    self.settings.remove(&service_id);
+                }
             },
             ConfigUpdate::ServiceRemove(sid) => {
                 self.settings.remove(&sid);

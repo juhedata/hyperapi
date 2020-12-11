@@ -1,9 +1,9 @@
 use std::{collections::HashMap, pin::Pin};
-use hyper::{Request, Response, Body};
+use hyper::{Request, Response, Body, StatusCode};
 use tokio::sync::{mpsc, broadcast};
 use tokio::sync::oneshot;
 use std::future::Future;
-
+use tracing::{event, Level};
 use crate::config::{ClientId, ConfigUpdate};
 
 
@@ -56,7 +56,14 @@ impl RequestContext {
 
     fn extract_service_id(req: &Request<Body>) -> String {
         let path = req.uri().path().strip_prefix("/").unwrap();
-        let (service_id, _path) = path.split_at(path.find("/").unwrap());
+        let (service_id, _path) = match path.find("/") {
+            Some(pos) => {
+                path.split_at(pos)
+            },
+            None => {
+                (path, "")
+            }
+        };
         String::from(service_id)
     }
 }
@@ -66,24 +73,26 @@ pub async fn start_middleware<MW>(mut tasks: mpsc::Receiver<MiddlewareRequest>, 
 where MW: Middleware + Default
 {
     let mut mw = MW::default();
-    
-    tokio::select! {
-        task = tasks.recv() => {
-            match task {
-                Some(x) => {
-                    mw.work(x).await;
-                },
-                None => {},
-            }
-        },
-        update = updates.recv() => {
-            match update {
-                Ok(c) => {
-                    mw.config_update(c);
-                },
-                Err(_e) => {},
-            }
-        },
+
+    loop {
+        tokio::select! {
+            task = tasks.recv() => {
+                match task {
+                    Some(x) => {
+                        mw.work(x).await;
+                    },
+                    None => {},
+                }
+            },
+            update = updates.recv() => {
+                match update {
+                    Ok(c) => {
+                        mw.config_update(c);
+                    },
+                    Err(_e) => {},
+                }
+            },
+        }
     }
 }
 
@@ -93,14 +102,17 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
 {
     if mw_stack.len() == 0 {
         return Box::pin(async{
-            Response::new(Body::empty())
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("Middleware misconfiguration"))
+                .unwrap()
         });
     }
-    
+    event!(Level::DEBUG, "enter middleware chain");
     let mut mw = mw_stack.pop().unwrap();
     let (tx1, rx1) = oneshot::channel();
     let mw_req = MwPreRequest {
-        context: context,
+        context,
         request: req,
         result: tx1,
     };
@@ -123,11 +135,9 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
                 };
                 mw.send(MiddlewareRequest::Response(mw_resp)).await.unwrap();
                 let resp = rx2.await.unwrap();
-                return resp;
+                resp
             }, 
-            Err(resp) => {
-                return resp;
-            },
+            Err(resp) => resp,
         }
     };
 

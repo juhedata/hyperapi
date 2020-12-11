@@ -7,7 +7,7 @@ use std::pin::Pin;
 use std::task::{Poll, Context};
 use std::future::Future;
 use std::time::Duration;
-
+use tracing::{event, Level};
 
 
 #[derive(Debug, Clone)]
@@ -58,7 +58,7 @@ impl Service<Request<Body>> for ProxyHandler
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let req = ProxyHandler::alter_request(req, &self.upstream);
-        //println!("{:?}", req.uri());
+        event!(Level::DEBUG, "{:?}", req.uri());
         let f = self.client.request(req);
         Box::pin(async move {
             f.await

@@ -1,4 +1,4 @@
-use hyper::{Request, Response, Body};
+use hyper::{Request, Response, Body, StatusCode};
 use tokio::sync::mpsc;
 use std::time::Duration;
 use tower::{Service, ServiceExt};
@@ -16,9 +16,7 @@ use crate::config::{ConfigUpdate, ServiceInfo};
 use crate::middleware::MiddlewareRequest;
 use crate::middleware::proxy::ProxyHandler;
 use super::{Middleware, middleware::MwPreRequest};
-
-
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
+use tracing::{event, Level};
 
 
 #[derive(Debug)]
@@ -38,20 +36,48 @@ impl UpstreamMiddleware {
         let us: Vec<String> = conf.upstreams.iter().map(|u| u.target.clone()).collect();
         let timeout = Duration::from_millis(conf.timeout);
         let max_conn = 1000;
-        let mut service = build_service(us, timeout, max_conn);
+
+        let mut service = match us.len() {
+            1 => {
+                let u = us.get(0).unwrap();
+                let proxy = Timeout::new(ProxyHandler::new(u.clone()), timeout);
+                let limit = ConcurrencyLimit::new(proxy, max_conn);
+                let service = LoadShed::new(limit);
+                BoxService::new(service)
+            },
+            _ => {
+                let list: Vec<Timeout<ProxyHandler>> = us.iter().map(|u| {
+                    Timeout::new(ProxyHandler::new(u.clone()), timeout)
+                }).collect();
+                let discover = ServiceList::new(list);
+                let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), NoInstrument);
+                let balance = Balance::from_entropy(load);
+                let limit = ConcurrencyLimit::new(balance, max_conn);
+                let service = LoadShed::new(limit);
+                BoxService::new(service)
+            },
+        };
 
         while let Some(MwPreRequest {context: _, request, result }) = rx.recv().await {
+            event!(Level::DEBUG, "request {:?}", request.uri());
             if let Ok(px) = service.ready_and().await {
                 let f = px.call(request);
                 tokio::spawn(async move {
-                    if let Ok(resp) = f.await {
-                        match result.send(Err(resp)) {
-                            Ok(_) => {},
-                            Err(_e) => println!("failed to send result"),
+                    match f.await {
+                        Ok(resp) => {
+                            match result.send(Err(resp)) {
+                                Ok(_) => {},
+                                Err(_e) => println!("failed to send result"),
+                            }
+                        },
+                        Err(e) => {
+                            let msg = format!("Gateway error\n{:?}", e);
+                            let err = Response::builder()
+                                .status(StatusCode::BAD_GATEWAY)
+                                .body(Body::from(msg))
+                                .unwrap();
+                            result.send(Err(err)).unwrap();
                         }
-                    } else {
-                        let err = Response::new(Body::from("Server Internal Error"));
-                        result.send(Err(err)).unwrap();
                     }
                 });
             }
@@ -73,7 +99,10 @@ impl Middleware for UpstreamMiddleware {
                     })
                 } else {
                     Box::pin(async {
-                        let err= Response::new(Body::from("Invalid Service Id"));
+                        let err= Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body(Body::from("Invalid Service Id"))
+                            .unwrap();
                         req.result.send(Err(err)).unwrap();
                     })
                 }
@@ -102,16 +131,4 @@ impl Middleware for UpstreamMiddleware {
     }
 }
 
-
-fn build_service(upstream: Vec<String>, timeout: Duration, max_conn: usize) -> BoxService<Request<Body>, Response<Body>, BoxError>{
-    let list: Vec<Timeout<ProxyHandler>> = upstream.iter().map(|u| {
-        Timeout::new(ProxyHandler::new(u.clone()), timeout)
-    }).collect();
-    let discover = ServiceList::new(list);
-    let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), NoInstrument);
-    let balance = Balance::from_entropy(load);
-    let limit = ConcurrencyLimit::new(balance, max_conn);
-    let shed = LoadShed::new(limit);
-    BoxService::new(shed)
-}
 
