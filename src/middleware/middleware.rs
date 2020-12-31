@@ -3,8 +3,9 @@ use hyper::{Request, Response, Body, StatusCode};
 use tokio::sync::{mpsc, broadcast};
 use tokio::sync::oneshot;
 use std::future::Future;
-use tracing::{event, Level};
+use tracing::{span, event, Level, Instrument};
 use crate::config::{ClientId, ConfigUpdate};
+use uuid::Uuid;
 
 
 #[derive(Debug)]
@@ -29,11 +30,13 @@ pub enum MiddlewareRequest {
 
 
 pub trait Middleware {
-    
-    fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>>;
+    fn name(&self) -> String;
+
+    fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>>;
+
+    fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>>;
 
     fn config_update(&mut self, update: ConfigUpdate);
-    
 }
 
 
@@ -42,15 +45,18 @@ pub struct RequestContext {
     pub service_id: String,
     pub client: Option<ClientId>,
     pub args: HashMap<String, String>,
+    pub request_id: Uuid,
 }
 
 impl RequestContext {
     pub fn new(req: &Request<Body>) -> Self {
         let service_id = Self::extract_service_id(req);
+        let req_id = Self::extract_request_id(req);
         RequestContext {
             service_id,
             client: None,
             args: HashMap::new(),
+            request_id: req_id,
         }
     }
 
@@ -66,6 +72,15 @@ impl RequestContext {
         };
         String::from(service_id)
     }
+
+    fn extract_request_id(_req: &Request<Body>) -> Uuid {
+        // if let Some(value) = req.headers().get("request_id".into()) {
+        //     if let Ok(id) = Uuid::parse_str(value.to_str().unwrap_or("")) {
+        //         return id
+        //     }
+        // }
+        Uuid::new_v4()
+    }
 }
 
 
@@ -78,8 +93,25 @@ where MW: Middleware + Default
         tokio::select! {
             task = tasks.recv() => {
                 match task {
-                    Some(x) => {
-                        mw.work(x).await;
+                    Some(MiddlewareRequest::Request(x)) => {
+                        let ctx = x.context.clone();
+                        let app_id = ctx.client.map(|x| x.app_id).unwrap_or("".into());
+                        let span = span!(Level::INFO, "pre_filter",
+                                        service=ctx.service_id.as_str(),
+                                        trace_id=ctx.request_id.to_string().as_str(),
+                                        app_id=app_id.as_str(),
+                                        middleware=mw.name().as_str());
+                        mw.request(x).instrument(span).await;
+                    },
+                    Some(MiddlewareRequest::Response(x)) => {
+                        let ctx = x.context.clone();
+                        let app_id = ctx.client.map(|x| x.app_id).unwrap_or("".into());
+                        let span = span!(Level::INFO, "post_filter",
+                                        service=ctx.service_id.as_str(),
+                                        trace_id=ctx.request_id.to_string().as_str(),
+                                        app_id=app_id.as_str(),
+                                        middleware=mw.name().as_str());
+                        mw.response(x).instrument(span).await;
                     },
                     None => {},
                 }
@@ -100,7 +132,8 @@ where MW: Middleware + Default
 pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stack: Vec<mpsc::Sender<MiddlewareRequest>>)
         -> Pin<Box<dyn Future<Output=Response<Body>> + Send>> 
 {
-    if mw_stack.len() == 0 {
+    let depth = mw_stack.len();
+    if depth == 0 {
         return Box::pin(async{
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -108,8 +141,7 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
                 .unwrap()
         });
     }
-    event!(Level::DEBUG, "enter middleware chain");
-    let mut mw = mw_stack.pop().unwrap();
+    let mw = mw_stack.pop().unwrap();
     let (tx1, rx1) = oneshot::channel();
     let mw_req = MwPreRequest {
         context,
@@ -137,7 +169,10 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
                 let resp = rx2.await.unwrap();
                 resp
             }, 
-            Err(resp) => resp,
+            Err(resp) => {
+                event!(Level::DEBUG, "Got Err<Response>");
+                resp
+            },
         }
     };
 

@@ -3,7 +3,7 @@ use hyper::{Response, Body, StatusCode};
 use std::time::{Instant, Duration};
 use std::future::Future;
 use std::pin::Pin;
-use crate::middleware::{Middleware, MwPreRequest, MiddlewareRequest};
+use crate::middleware::{Middleware, MwPreRequest, MwPostRequest};
 use crate::config::{ConfigUpdate, FilterSetting, RateLimit};
 
 
@@ -21,46 +21,50 @@ impl Default for RateLimitMiddleware {
 
 impl Middleware for RateLimitMiddleware {
 
-    fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        let now = Instant::now();
-        match task {
-            MiddlewareRequest::Request(MwPreRequest { context, request, result}) => {
-                let service_id = context.service_id.clone();
-                let client = context.client.clone();
-                let setting = client
-                    .map(|c| self.limiter.get_mut(&c.app_key))
-                    .flatten()
-                    .map(|sl| sl.get_mut(&service_id))
-                    .flatten();
+    fn name(&self) -> String {
+        "rate_limit".into()
+    }
 
-                match setting {
-                    Some(buckets) => {
-                        let mut pass = true;
-                        for limit in buckets.iter_mut() {
-                            if !limit.check(now) {
-                                pass = false;
-                            }
-                        }
-                        if pass {
-                            result.send(Ok((request, context))).unwrap();
-                        } else {
-                            let err = Response::builder()
-                                .status(StatusCode::TOO_MANY_REQUESTS)
-                                .body(Body::from("Rate limit"))
-                                .unwrap();
-                            result.send(Err(err)).unwrap();
-                        }
-                    },
-                    None => {
-                        result.send(Ok((request, context))).unwrap();
-                    },
-                };
-                Box::pin(async {})
+    fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        let now = Instant::now();
+        let MwPreRequest { context, request, result} = task;
+        let service_id = context.service_id.clone();
+        let client = context.client.clone();
+        let setting = client
+            .map(|c| self.limiter.get_mut(&c.app_key))
+            .flatten()
+            .map(|sl| sl.get_mut(&service_id))
+            .flatten();
+
+        match setting {
+            Some(buckets) => {
+                let mut pass = true;
+                for limit in buckets.iter_mut() {
+                    if !limit.check(now) {
+                        pass = false;
+                    }
+                }
+                if pass {
+                    result.send(Ok((request, context))).unwrap();
+                } else {
+                    let err = Response::builder()
+                        .status(StatusCode::TOO_MANY_REQUESTS)
+                        .body(Body::from("Rate limit"))
+                        .unwrap();
+                    result.send(Err(err)).unwrap();
+                }
             },
-            MiddlewareRequest::Response(resp) => Box::pin(async {
-                resp.result.send(resp.response).unwrap();
-            }),
-        }
+            None => {
+                result.send(Ok((request, context))).unwrap();
+            },
+        };
+        Box::pin(async {})
+    }
+
+    fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        Box::pin(async {
+            task.result.send(task.response).unwrap();
+        })
     }
 
     fn config_update(&mut self, update: ConfigUpdate) {

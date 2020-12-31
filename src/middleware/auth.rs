@@ -6,7 +6,7 @@ use base64::decode as base64_decode;
 use jsonwebtoken as jwt;
 use serde::{Serialize, Deserialize};
 use crate::config::*;
-use crate::middleware::{MwPreRequest, Middleware, MiddlewareRequest};
+use crate::middleware::{MwPreRequest, Middleware, MwPostRequest};
 
 
 
@@ -24,47 +24,48 @@ impl Default for AuthMiddleware {
 
 
 impl Middleware for AuthMiddleware {
+    fn name(&self) -> String {
+        "auth".into()
+    }
 
-
-    fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        match task {
-            MiddlewareRequest::Request(MwPreRequest{mut context,  request, result}) => {
-                match self.service_auth.get(&context.service_id) {
-                    Some(auth_type) => {
-                        let auth_type = auth_type.clone();
-                        let clients = self.clients.clone();
-                        tokio::spawn(async move {
-                            let client_id = verify_token(&request, auth_type, clients).await;
-                            match client_id {
-                                Some(cid) => {
-                                    context.client.replace(cid);
-                                    result.send(Ok((request, context))).unwrap();
-                                },
-                                None => {
-                                    let err = Response::builder()
-                                        .status(StatusCode::UNAUTHORIZED)
-                                        .body(Body::from("auth failed"))
-                                        .unwrap();
-                                    result.send(Err(err)).unwrap();
-                                },
-                            }
-                        });
-                    },
-                    None => {
-                        let err = Response::builder()
-                            .status(StatusCode::UNAUTHORIZED)
-                            .body(Body::from("auth failed"))
-                            .unwrap();
-                        result.send(Err(err)).unwrap();
-                    },
-                }
-
+    fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        let MwPreRequest{mut context,  request, result} = task;
+        match self.service_auth.get(&context.service_id) {
+            Some(auth_type) => {
+                let auth_type = auth_type.clone();
+                let clients = self.clients.clone();
+                tokio::spawn(async move {
+                    let client_id = verify_token(&request, auth_type, clients).await;
+                    match client_id {
+                        Some(cid) => {
+                            context.client.replace(cid);
+                            result.send(Ok((request, context))).unwrap();
+                        },
+                        None => {
+                            let err = Response::builder()
+                                .status(StatusCode::UNAUTHORIZED)
+                                .body(Body::from("auth failed"))
+                                .unwrap();
+                            result.send(Err(err)).unwrap();
+                        },
+                    }
+                });
             },
-            MiddlewareRequest::Response(resp) => {
-                resp.result.send(resp.response).unwrap();
+            None => {
+                let err = Response::builder()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .body(Body::from("auth failed"))
+                    .unwrap();
+                result.send(Err(err)).unwrap();
             },
         }
         Box::pin(async {})
+    }
+
+    fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        Box::pin(async {
+            task.result.send(task.response).unwrap();
+        })
     }
 
     fn config_update(&mut self, update: ConfigUpdate) {

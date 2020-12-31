@@ -10,7 +10,10 @@ use serde::{Serialize, Deserialize};
 use hyperapi::config::{GatewayConfig};
 use hyperapi::proxy::GatewayServer;
 use std::sync::{Arc, Mutex};
-use tracing_subscriber;
+use tracing_log::LogTracer;
+use tracing_subscriber::{Registry, EnvFilter};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_bunyan_formatter::{JsonStorageLayer, BunyanFormattingLayer};
 
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -21,7 +24,17 @@ struct ServerConfigFile {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    // setup logging
+    LogTracer::init().expect("Unable to setup log tracer!");
+    let app_name = concat!(env!("CARGO_PKG_NAME"), "-", env!("CARGO_PKG_VERSION")).to_string();
+    let (non_blocking_writer, _guard) = tracing_appender::non_blocking(std::io::stdout());
+    let bunyan_formatting_layer = BunyanFormattingLayer::new(app_name, non_blocking_writer);
+    let subscriber = Registry::default()
+        .with(EnvFilter::new("INFO"))
+        .with(JsonStorageLayer)
+        .with(bunyan_formatting_layer);
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+
 
     let matches = App::new("apihub.rs")
           .version("0.1")

@@ -6,20 +6,15 @@ edition = "2018"
 
 
 [dependencies]
-hyper = "0.13"
+hyper = { version = "0.14", features = ["full"] }
 log = "0.4"
-tokio = { version = "0.2", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 clap = "2.27"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.8"
-tower = "0.3"
-tower-balance = "0.3"
-tower-load = "0.3"
-tower-discover = "0.3"
-tower-limit = "0.3"
-tower-load-shed = "0.3.0"
-tower-util = "0.3"
+tower = { git = "https://github.com/tower-rs/tower", features=["limit", "balance", "timeout", "load", "load-shed", "discover", "util"] }
+hyper-rustls = "0.22"
 
 url = "2"
 pin-project = "0.4"
@@ -27,21 +22,18 @@ futures = "0.3"
 futures-util = "0.3"
 anyhow = "1.0"
 rand = "0.7"
-tracing = "0.1"
 base64 = "0.13"
 jsonwebtoken = "7"
 regex = "1.4"
-env_logger = "0.8"
 prometheus = "0.10"
 lazy_static = "1.4"
+tracing = "0.1"
 tracing-subscriber = "0.2"
-mlua = { version = "0.4", features = ["luajit", "vendored"] }
+tracing-log = "0.1"
+tracing-bunyan-formatter = "0.1"
+tracing-appender ="0.1"
 sysinfo = "0.15"
-hyper-rustls = "0.21"
-etcd-rs = "0.3.0"
+uuid = { version="0.8", features=["v4"] }
 
 
-[dev-dependencies]
-tower-test = "0.3"
-tokio-test = "0.2"
 

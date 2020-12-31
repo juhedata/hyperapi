@@ -9,6 +9,7 @@ use crate::middleware::{middleware_chain, RequestContext, MiddlewareRequest};
 use prometheus::{Encoder, TextEncoder};
 use tracing::{event, span, Level, Instrument};
 
+
 lazy_static::lazy_static! {
     static ref HTTP_COUNTER: prometheus::IntCounterVec = prometheus::register_int_counter_vec!(
         "hyperapi_request_count",
@@ -70,16 +71,16 @@ impl Service<Request<Body>> for RequestHandler {
             },
             _ => {
                 let stack = self.stack.clone();
-                let span = span!(Level::INFO, "request");
-                let fut = middleware_chain(req, context, stack)
-                    .instrument(span);
+                let span = span!(Level::INFO, "request",
+                                        service=context.service_id.as_str(),
+                                        trace_id=context.request_id.to_string().as_str());
+                let fut = middleware_chain(req, context, stack);
                 Box::pin(async move {
-                    event!(Level::DEBUG, "start request handling");
                     let resp = fut.await;
                     HTTP_REQ_DURATION_HIST.with_label_values(&[&service_id, "", &resp.status().to_string()]).observe(timer.elapsed().as_secs_f64());
                     HTTP_COUNTER.with_label_values(&[&service_id, "", &resp.status().to_string()]).inc_by(1);
                     Ok(resp)
-                })
+                }.instrument(span))
             }
         }
     }

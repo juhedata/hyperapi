@@ -1,21 +1,20 @@
-use hyper::{Request, Response, Body, StatusCode};
+use hyper::{Response, Body, StatusCode};
 use tokio::sync::mpsc;
 use std::time::Duration;
-use tower::{Service, ServiceExt};
 use std::collections::HashMap;
+use tower::Service;
 use tower::timeout::Timeout;
 use tower::discover::ServiceList;
-use tower_load::{PeakEwmaDiscover, NoInstrument};
-use tower_balance::p2c::Balance;
-use tower_limit::concurrency::ConcurrencyLimit;
-use tower_load_shed::LoadShed;
-use tower_util::BoxService;
+use tower::load::{PeakEwmaDiscover, CompleteOnResponse};
+use tower::balance::p2c::Balance;
+use tower::limit::concurrency::ConcurrencyLimit;
+use tower::load_shed::LoadShed;
+use tower::util::{BoxService, ServiceExt};
 use std::future::Future;
 use std::pin::Pin;
 use crate::config::{ConfigUpdate, ServiceInfo};
-use crate::middleware::MiddlewareRequest;
+use crate::middleware::{Middleware, MwPreRequest, MwPostRequest};
 use crate::middleware::proxy::ProxyHandler;
-use super::{Middleware, middleware::MwPreRequest};
 use tracing::{event, Level};
 
 
@@ -50,8 +49,8 @@ impl UpstreamMiddleware {
                     Timeout::new(ProxyHandler::new(u.clone()), timeout)
                 }).collect();
                 let discover = ServiceList::new(list);
-                let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), NoInstrument);
-                let balance = Balance::from_entropy(load);
+                let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), CompleteOnResponse::default());
+                let balance = Balance::new(load);
                 let limit = ConcurrencyLimit::new(balance, max_conn);
                 let service = LoadShed::new(limit);
                 BoxService::new(service)
@@ -89,28 +88,31 @@ impl UpstreamMiddleware {
 
 impl Middleware for UpstreamMiddleware {
 
-    fn work(&mut self, task: MiddlewareRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        match task {
-            MiddlewareRequest::Request(req) => {
-                if let Some(ch) = self.worker_queues.get_mut(&req.context.service_id) {
-                    let mut task_ch = ch.clone();
-                    Box::pin(async move {
-                        task_ch.send(req).await.unwrap();
-                    })
-                } else {
-                    Box::pin(async {
-                        let err= Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body(Body::from("Invalid Service Id"))
-                            .unwrap();
-                        req.result.send(Err(err)).unwrap();
-                    })
-                }
-            },
-            MiddlewareRequest::Response(resp) => Box::pin(async {
-                resp.result.send(resp.response).unwrap();
-            }),
+    fn name(&self) -> String {
+        "upstream".into()
+    }
+
+    fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        if let Some(ch) = self.worker_queues.get_mut(&task.context.service_id) {
+            let task_ch = ch.clone();
+            Box::pin(async move {
+                task_ch.send(task).await.unwrap();
+            })
+        } else {
+            Box::pin(async {
+                let err= Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Invalid Service Id"))
+                    .unwrap();
+                task.result.send(Err(err)).unwrap();
+            })
         }
+    }
+
+    fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        Box::pin(async {
+            task.result.send(task.response).unwrap();
+        })
     }
 
     fn config_update(&mut self, update: ConfigUpdate) {

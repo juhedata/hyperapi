@@ -1,5 +1,5 @@
 use hyper::{Request, Response, Body, Uri};
-use hyper::client::connect::HttpConnector;
+use hyper::client::HttpConnector;
 use hyper::client::Client;
 use hyper_rustls::HttpsConnector;
 use tower::Service;
@@ -19,7 +19,7 @@ pub struct ProxyHandler {
 impl ProxyHandler {
 
     pub fn new(upstream: String) -> Self {
-        let tls = HttpsConnector::new();
+        let tls = HttpsConnector::with_native_roots();
         let client = Client::builder()
             .pool_idle_timeout(Duration::from_secs(30))
             .build::<_, Body>(tls);
@@ -49,7 +49,7 @@ impl ProxyHandler {
 impl Service<Request<Body>> for ProxyHandler
 {
     type Response = Response<Body>;
-    type Error = hyper::error::Error;
+    type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _c: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
