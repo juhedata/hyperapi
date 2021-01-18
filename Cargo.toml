@@ -8,12 +8,12 @@ edition = "2018"
 [dependencies]
 hyper = { version = "0.14", features = ["full"] }
 log = "0.4"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.2", features = ["full"] }
 clap = "2.27"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.8"
-tower = { git = "https://github.com/tower-rs/tower", features=["limit", "balance", "timeout", "load", "load-shed", "discover", "util"] }
+tower = { version = "0.4", features=["limit", "balance", "timeout", "load", "load-shed", "discover", "util"] }
 hyper-rustls = "0.22"
 
 url = "2"

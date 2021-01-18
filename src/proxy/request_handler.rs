@@ -26,7 +26,7 @@ lazy_static::lazy_static! {
 
 
 pub struct RequestHandler {
-    pub stack: Vec<mpsc::Sender<MiddlewareRequest>>,
+    pub stack: Vec<(String, mpsc::Sender<MiddlewareRequest>)>,
 }
 
 
@@ -71,9 +71,10 @@ impl Service<Request<Body>> for RequestHandler {
             },
             _ => {
                 let stack = self.stack.clone();
-                let span = span!(Level::INFO, "request",
+                let span = span!(Level::DEBUG, "request",
                                         service=context.service_id.as_str(),
                                         trace_id=context.request_id.to_string().as_str());
+                event!(Level::INFO, "{:?} {:?}", req.method(), req.uri());
                 let fut = middleware_chain(req, context, stack);
                 Box::pin(async move {
                     let resp = fut.await;

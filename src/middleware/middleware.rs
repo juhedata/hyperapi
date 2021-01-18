@@ -96,7 +96,7 @@ where MW: Middleware + Default
                     Some(MiddlewareRequest::Request(x)) => {
                         let ctx = x.context.clone();
                         let app_id = ctx.client.map(|x| x.app_id).unwrap_or("".into());
-                        let span = span!(Level::INFO, "pre_filter",
+                        let span = span!(Level::DEBUG, "pre_filter",
                                         service=ctx.service_id.as_str(),
                                         trace_id=ctx.request_id.to_string().as_str(),
                                         app_id=app_id.as_str(),
@@ -106,7 +106,7 @@ where MW: Middleware + Default
                     Some(MiddlewareRequest::Response(x)) => {
                         let ctx = x.context.clone();
                         let app_id = ctx.client.map(|x| x.app_id).unwrap_or("".into());
-                        let span = span!(Level::INFO, "post_filter",
+                        let span = span!(Level::DEBUG, "post_filter",
                                         service=ctx.service_id.as_str(),
                                         trace_id=ctx.request_id.to_string().as_str(),
                                         app_id=app_id.as_str(),
@@ -129,7 +129,7 @@ where MW: Middleware + Default
 }
 
 
-pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stack: Vec<mpsc::Sender<MiddlewareRequest>>)
+pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stack: Vec<(String, mpsc::Sender<MiddlewareRequest>)>)
         -> Pin<Box<dyn Future<Output=Response<Body>> + Send>> 
 {
     let depth = mw_stack.len();
@@ -141,7 +141,7 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
                 .unwrap()
         });
     }
-    let mw = mw_stack.pop().unwrap();
+    let (_mw_name, mw) = mw_stack.pop().unwrap();
     let (tx1, rx1) = oneshot::channel();
     let mw_req = MwPreRequest {
         context,

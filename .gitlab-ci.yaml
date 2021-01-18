@@ -1,0 +1,22 @@
+stages:
+  - build
+  - test
+  - deploy
+
+prepare:
+  stage: build
+  tags:
+    - fastapi
+  script: "cargo build"
+
+pytest:
+  stage: test
+  tags:
+    - fastapi
+  script: "cargo test"
+
+deploy:
+  stage: deploy
+  tags:
+    - fastapi
+  script: "echo \"RUN API Gateway\""
