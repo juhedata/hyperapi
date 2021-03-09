@@ -1,0 +1,47 @@
+services:
+  - service_id: leric/account_service
+    path: account     # api url first segment
+    protocol: http
+    auth:
+      type: AppKey
+    timeout: 3000
+    upstreams:
+      - { target: "http://127.0.0.1:8000/" }
+    filters:
+      - type: Header
+        methods: "*"
+        path_regex: ".*"
+        operate_on: "request"
+        injection:
+          X-Authentication: "source-authenticate-token"
+        removal:
+          - "Authentication"
+      - type: ACL
+        access_control: "allow" 
+        paths: 
+          - methods: "*"
+            path_regex: "/user/.*"
+
+    sla:
+      - name: Default
+        filters:
+          - type: RateLimit
+            methods: "POST"
+            path_regex: ".*"
+            interval: 60
+            limit: 100
+            burst: 100
+          - type: RateLimit
+            methods: "*"
+            path_regex: ".*"
+            interval: 1
+            limit: 100
+            burst: 200
+
+clients:
+  - client_id: account/crm
+    app_key: 1345432321
+    ip_whitelist: []
+    services:
+      - leric/account_service:Default
+

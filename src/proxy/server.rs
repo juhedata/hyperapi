@@ -1,53 +1,59 @@
 use tokio::sync::{mpsc, broadcast};
 use std::net::SocketAddr;
 use tracing::{event, Level};
-use crate::middleware::{MiddlewareRequest, Middleware, AuthMiddleware, CorsMiddleware, HeaderMiddleware, RateLimitMiddleware, UpstreamMiddleware};
-use crate::config::{ConfigSource, GatewayConfig};
+use crate::middleware::{MiddlewareRequest, Middleware, AuthMiddleware, HeaderMiddleware, RateLimitMiddleware, UpstreamMiddleware};
+use crate::config::ConfigSource;
 use super::RequestHandler;
+use crate::auth::{AuthService, AuthRequest};
+use futures::StreamExt;
 
 use crate::start_middleware_macro;
 
-pub struct GatewayServer {
-    pub stack: Vec<(String, mpsc::Sender<MiddlewareRequest>)>,
 
+pub struct GatewayServer {
+    pub service_stack: Vec<(String, mpsc::Sender<MiddlewareRequest>)>,
+    pub auth_channel: mpsc::Sender<AuthRequest>,
 }
+
 
 impl GatewayServer {
 
-    pub fn new(config: GatewayConfig) -> Self {
+    pub fn new(config: ConfigSource) -> Self {
 
         let mut stack = Vec::new();
-        let (conf_tx, _conf_rx) = broadcast::channel(16);
+        let (conf_tx, conf_rx) = broadcast::channel(16);
 
         // start upstream middleware, last in stack run first
         start_middleware_macro!(UpstreamMiddleware, stack, conf_tx);
-
         // start header middleware
         start_middleware_macro!(HeaderMiddleware, stack, conf_tx);
-
-        // start cors middleware
-        start_middleware_macro!(CorsMiddleware, stack, conf_tx);
-
         // start ratelimit middleware
         start_middleware_macro!(RateLimitMiddleware, stack, conf_tx);
-
         // start auth middleware
         start_middleware_macro!(AuthMiddleware, stack, conf_tx);
 
-        // poll config update
-        let mut config_source = ConfigSource { config };
         tokio::spawn(async move {
-            event!(Level::INFO, "Loading Service Config");
-            config_source.watch(conf_tx).await
+            event!(Level::INFO, "Watch Config Update");
+            while let Some(config_update) = config.next().await {
+                conf_tx.send(config_update);
+            }
+        });
+        
+        let (auth_tx, auth_rx) = mpsc::channel(16);
+        tokio::spawn(async move {
+            event!(Level::INFO, "Start auth worker");
+            let auth_service = AuthService::new(conf_rx, auth_rx);
+            auth_service.start().await
         });
 
-        GatewayServer { stack }
+        GatewayServer { service_stack: stack, auth_channel: auth_tx }
     }
 
 
     pub fn make_service(&self, _addr: SocketAddr) -> RequestHandler {
-        let stack = self.stack.clone();
-        RequestHandler { stack }
+        let stack = self.service_stack.clone();
+        let auth = self.auth_channel.clone();
+        RequestHandler { stack, auth }
     }
 
 }

@@ -1,6 +1,7 @@
 pub mod proxy;
 pub mod config;
 pub mod middleware;
+pub mod auth;
 
 
 #[macro_export]
@@ -17,14 +18,5 @@ macro_rules! start_middleware_macro {
     };
 }
 
-
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn exploration() {
-        assert_eq!(2 + 2, 4);
-    }
-}
 
 
