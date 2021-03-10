@@ -7,6 +7,7 @@ pub use service::{AuthService, AuthRequest, AuthResponse};
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use super::*;
     use tokio::sync::{broadcast, mpsc, oneshot};
     use crate::config::*;
@@ -60,11 +61,13 @@ mod tests {
         });
         conf_tx.send(update);
 
+        let client_services = HashMap::new();
+        client_services.insert(String::from("leric/test"), String::from("Default"));
         let update = ConfigUpdate::ClientUpdate(ClientInfo{ 
             client_id: String::from("leric/app"),
             app_key: String::from("abcdefg"),
             ip_whitelist: vec![],
-            services: vec![String::from("leric/test:Default")],
+            services: client_services,
         });
         conf_tx.send(update);
 
