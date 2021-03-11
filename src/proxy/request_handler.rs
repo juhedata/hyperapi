@@ -3,15 +3,14 @@ use tokio::sync::{mpsc, oneshot};
 use tower::Service;
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Instant;
 use std::task::{Poll, Context};
-use crate::{auth::AuthRequest, middleware::{middleware_chain, RequestContext, MiddlewareRequest}};
+use crate::{auth::AuthRequest, middleware::{MiddlewareHandle, RequestContext, middleware_chain}};
 
 use tracing::{event, span, Level, Instrument};
 
 
 pub struct RequestHandler {
-    pub stack: Vec<(String, mpsc::Sender<MiddlewareRequest>)>,
+    pub stack: Vec<MiddlewareHandle>,
     pub auth: mpsc::Sender<AuthRequest>,
 }
 
@@ -26,14 +25,10 @@ impl Service<Request<Body>> for RequestHandler {
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let timer = Instant::now();
         let stack = self.stack.clone();
         let auth = self.auth.clone();
 
-        let context = RequestContext::new(&req);
-        let span = span!(Level::DEBUG, "request",
-                                service=context.service_id.as_str(),
-                                trace_id=context.request_id.to_string().as_str());
+        let span = span!(Level::DEBUG, "request");
         event!(Level::INFO, "{:?} {:?}", req.method(), req.uri());
         Box::pin(async move {
             // auth
@@ -43,14 +38,19 @@ impl Service<Request<Body>> for RequestHandler {
                 head: head,
                 result: tx,
             };
-            auth.send(auth_request);
-            let auth_resp = rx.await;
+            let _ = auth.send(auth_request).await;
+            let auth_result = rx.await;
 
             // handle request
-            if let Ok(auth_resp) = auth_resp {
-                let req = Request::from_parts(auth_resp.head, body);
-                let resp = middleware_chain(req, context, stack).await;
-                Ok(resp)
+            if let Ok((head_part, auth_resp)) = auth_result {
+                if auth_resp.success {
+                    let req = Request::from_parts(head_part, body);
+                    let context = RequestContext::new(&req, &auth_resp);
+                    let resp: Response<Body> = middleware_chain(req, context, stack).await;
+                    Ok(resp)
+                } else {
+                    Ok(Response::new(auth_resp.error.into()))
+                }
             } else {
                 Ok(Response::new("Auth Failed".into()))
             }

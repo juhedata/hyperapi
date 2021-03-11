@@ -3,95 +3,124 @@ use hyper::{Response, Body, StatusCode};
 use std::time::{Instant, Duration};
 use std::future::Future;
 use std::pin::Pin;
-use crate::middleware::{Middleware, MwPreRequest, MwPostRequest};
-use crate::config::{ConfigUpdate, FilterSetting, RateLimit};
+use crate::{config::RateLimitSetting, middleware::{Middleware, MwPreRequest, MwPreResponse, MwPostRequest}};
+use crate::config::{ConfigUpdate, FilterSetting};
 
 
 #[derive(Debug)]
 pub struct RateLimitMiddleware {
-    limiter: HashMap<String, HashMap<String, Vec<TokenBucket>>>,
+    service_limit: HashMap<String, Vec<TokenBucket>>,  // service_limit[service_id] = Vec<TokenBucket>
+    client_limit: HashMap<String, HashMap<String, Vec<TokenBucket>>>,   // client_limit[service_id][client_id] = Vec<TokenBucket>
+    sla: HashMap<String, HashMap<String, Vec<TokenBucket>>>,  // services[service_id][sla_id] = Vec<RateLimit>
 }
 
 impl Default for RateLimitMiddleware {
     fn default() -> Self {
-        RateLimitMiddleware { limiter: HashMap::new() }
+        RateLimitMiddleware { 
+            service_limit: HashMap::new(), 
+            client_limit: HashMap::new(), 
+            sla: HashMap::new(),
+        }
     }
 }
 
 
 impl Middleware for RateLimitMiddleware {
 
-    fn name(&self) -> String {
-        "rate_limit".into()
+    fn name() -> String {
+        "RateLimit".into()
+    }
+
+    fn post() -> bool {
+        false
     }
 
     fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
         let now = Instant::now();
-        let MwPreRequest { context, request, result} = task;
-        let service_id = context.service_id.clone();
-        let client = context.client.clone();
-        let setting = client
-            .map(|c| self.limiter.get_mut(&c.app_key))
-            .flatten()
-            .map(|sl| sl.get_mut(&service_id))
-            .flatten();
-
-        match setting {
-            Some(buckets) => {
-                let mut pass = true;
-                for limit in buckets.iter_mut() {
+        let MwPreRequest { context, request, service_filters: _, client_filters: _, result} = task;
+        let mut pass = true;
+        if let Some(service_limits) = self.service_limit.get_mut(&context.service_id) {
+            for limit in service_limits {
+                if !limit.check(now) {
+                    pass = false;
+                }
+            }
+        }
+        if let Some(clients) = self.client_limit.get_mut(&context.service_id) {
+            if let Some(client_limits) = clients.get_mut(&context.client_id) {
+                for limit in client_limits {
                     if !limit.check(now) {
                         pass = false;
                     }
                 }
-                if pass {
-                    result.send(Ok((request, context))).unwrap();
-                } else {
-                    let err = Response::builder()
-                        .status(StatusCode::TOO_MANY_REQUESTS)
-                        .body(Body::from("Rate limit"))
-                        .unwrap();
-                    result.send(Err(err)).unwrap();
-                }
-            },
-            None => {
-                result.send(Ok((request, context))).unwrap();
-            },
-        };
-        Box::pin(async {})
+            }
+        }
+        
+        if !pass {  // return error response
+            let err = Response::builder()
+                .status(StatusCode::TOO_MANY_REQUESTS)
+                .body(Body::from("Rate limit"))
+                .unwrap();
+            let response = MwPreResponse { context, request: Some(request), response: Some(err) };
+            let _ = result.send(response);
+            Box::pin(async {})
+        } else {
+            let response = MwPreResponse { context, request: Some(request), response: None };
+            let _ = result.send(response);
+            Box::pin(async {})
+        }
     }
 
-    fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        Box::pin(async {
-            task.result.send(task.response).unwrap();
-        })
+    fn response(&mut self, _task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        todo!()
     }
 
     fn config_update(&mut self, update: ConfigUpdate) {
         match update {
             ConfigUpdate::ClientUpdate(client) => {
-                let mut limits = HashMap::new();
-                for (service_id, filters) in client.services {
-                    let mut buckets: Vec<TokenBucket> = Vec::new();
-                    for fs in filters {
-                        match fs {
-                            FilterSetting::RateLimit(s) => {
-                                let b = s.limits.iter().map(|rl| TokenBucket::new(rl));
-                                buckets.extend(b);
-                            },
-                            _ => {},
+                let mut client_limits: HashMap<String, Vec<TokenBucket>> = HashMap::new();
+                for (service_id, sla_name) in &client.services {
+                    if let Some(clients) = self.sla.get(service_id) {
+                        if let Some(settings) = clients.get(sla_name) {
+                            client_limits.insert(service_id.clone(), settings.clone());
                         }
                     }
-                    if buckets.len() > 0 {
-                        limits.insert(service_id, buckets);
+                }
+                self.client_limit.insert(client.client_id.clone(), client_limits);
+            },
+            ConfigUpdate::ClientRemove(client_id) => {
+                for (_, clients) in self.client_limit.iter_mut() {
+                    clients.remove(&client_id);
+                }
+            },
+            ConfigUpdate::ServiceUpdate(service) => {
+                let mut service_limits: Vec<TokenBucket> = Vec::new();
+
+                for filter in &service.filters {
+                    if let FilterSetting::RateLimit(f) = filter {
+                        service_limits.push(TokenBucket::new(f));
                     }
                 }
-                self.limiter.insert(client.app_key.clone(), limits);
+                self.service_limit.insert(service.service_id.clone(), service_limits);
+
+                let mut service_sla: HashMap<String, Vec<TokenBucket>> = HashMap::new();
+                for sla in &service.sla {
+                    for filter in &sla.filters {
+                        if let FilterSetting::RateLimit(f) = filter {
+                            if let Some(ssla) = service_sla.get_mut(&sla.name) {
+                                ssla.push(TokenBucket::new(f));
+                            } else {
+                                service_sla.insert(sla.name.clone(), vec![TokenBucket::new(f)]);
+                            }
+                        }
+                    }
+                }
+                self.sla.insert(service.service_id.clone(), service_sla);
             },
-            ConfigUpdate::ClientRemove(app_key) => {
-                self.limiter.remove(&app_key);
+            ConfigUpdate::ServiceRemove(service_id) => {
+                self.service_limit.remove(&service_id);
+                self.client_limit.remove(&service_id);
             },
-            _ => {},
         }
     }
 
@@ -111,9 +140,9 @@ pub struct TokenBucket {
 
 impl TokenBucket {
 
-    pub fn new(limit: &RateLimit) -> Self {
+    pub fn new(limit: &RateLimitSetting) -> Self {
         TokenBucket {
-            interval: Duration::from_secs(limit.duration as u64),
+            interval: Duration::from_secs(limit.interval as u64),
             limit: limit.limit as u64,
             capacity: limit.burst as u64,
             refresh_at: Instant::now(),
@@ -138,55 +167,3 @@ impl TokenBucket {
 }
 
 
-
-
-
-// impl<S> RedisRateLimitService<S> {
-//     pub fn new(redis: redis::Client) -> RedisRateLimitService {
-//         let script = redis::Script::new(r#"
-// local tokens_key = KEYS[1]
-// local timestamp_key = KEYS[2]
-
-// local seconds = tonumber(ARGV[1])
-// local rate = tonumber(ARGV[2])
-// local capacity = tonumber(ARGV[3])
-// local now = tonumber(ARGV[4])
-// local requested = 1
-
-// local ttl = math.floor(capacity/rate * seconds * 2)
-
-// local last_tokens = tonumber(redis.call("get", tokens_key))
-// if last_tokens == nil then
-//   last_tokens = capacity
-// end
-
-// local last_refreshed = tonumber(redis.call("get", timestamp_key))
-// if last_refreshed == nil then
-//   last_refreshed = 0
-// end
-
-// local delta = math.max(0, math.floor((now - last_refreshed) / seconds))
-// local filled_tokens = math.min(capacity, last_tokens + (delta * rate))
-// local allowed = filled_tokens >= requested
-// local new_tokens = filled_tokens
-// if allowed then
-//   new_tokens = filled_tokens - requested
-// end
-
-// redis.call("setex", tokens_key, ttl, new_tokens)
-// redis.call("setex", timestamp_key, ttl, now)
-
-// return allowed
-//         "#);
-
-//         RedisRateLimitService {redis, script}
-//     }
-
-//     async fn check(&self, key: &str, duration: i32, limit: i32, burst: i32, now: i64) -> Result<bool, redis::RedisError> {
-//         let token_key = key + ":" + duration.into() + ":v";
-//         let ts_key = key + ":" + duration.into() + ":t";
-//         let result = self.script.key(token_key).key(ts_key).arg(duration).arg(limit).arg(burst).arg(now)
-//             .invoke_async(&self.redis)?;
-//         result.await
-//     }
-// }

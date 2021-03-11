@@ -1,4 +1,4 @@
-use hyper::{Request, Response, Body, Uri};
+use hyper::{Body, Request, Response, Uri, header::HeaderValue};
 use hyper::client::HttpConnector;
 use hyper::client::Client;
 use hyper_rustls::HttpsConnector;
@@ -9,21 +9,24 @@ use std::future::Future;
 use std::time::Duration;
 use tracing::{event, Level};
 
+use crate::config::Upstream;
+
 
 #[derive(Debug, Clone)]
 pub struct ProxyHandler {
+    upstream_id: u64,
     upstream: String,
     client: Client<HttpsConnector<HttpConnector>, Body>,
 }
 
 impl ProxyHandler {
 
-    pub fn new(upstream: String) -> Self {
+    pub fn new(upstream: &Upstream) -> Self {
         let tls = HttpsConnector::with_native_roots();
         let client = Client::builder()
-            .pool_idle_timeout(Duration::from_secs(30))
+            .pool_idle_timeout(Duration::from_secs(upstream.timeout))
             .build::<_, Body>(tls);
-        ProxyHandler { client, upstream }
+        ProxyHandler { client: client, upstream: upstream.target.clone(), upstream_id: upstream.id }
     }
 
     fn alter_request(req: Request<Body>, endpoint: &str) -> Request<Body> {
@@ -60,8 +63,13 @@ impl Service<Request<Body>> for ProxyHandler
         let req = ProxyHandler::alter_request(req, &self.upstream);
         event!(Level::DEBUG, "{:?}", req.uri());
         let f = self.client.request(req);
+        let upstream_id = self.upstream_id.to_string();
         Box::pin(async move {
-            f.await
+            let mut resp = f.await.unwrap();
+            let header = resp.headers_mut();
+            let header_value = HeaderValue::from_str(&upstream_id).unwrap();
+            header.append("X-UPSTREAM-ID", header_value);
+            Ok(resp)
         })
     }
 }

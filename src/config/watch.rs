@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::config::{ClientInfo, ServiceInfo};
 use tungstenite::Message;
+use pin_project::pin_project;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -22,8 +23,9 @@ pub enum ConfigUpdate {
     ClientRemove(String),
 }
 
-
+#[pin_project]
 pub struct ConfigSource {
+    #[pin]
     reciever: mpsc::Receiver<ConfigUpdate>
 }
 
@@ -49,25 +51,25 @@ impl ConfigSource {
         let content = tokio::fs::read_to_string(config_file).await.expect("Failed to read config file");
         let config = serde_yaml::from_str::<ServiceConfig>(&content).expect("Failed to parse config file");
         for s in config.services.iter() {
-            sender.send(ConfigUpdate::ServiceUpdate(s.clone()));
+            sender.send(ConfigUpdate::ServiceUpdate(s.clone())).await.unwrap();
         }
 
         for c in config.apps.iter() {
-            sender.send(ConfigUpdate::ClientUpdate(c.clone()));
+            sender.send(ConfigUpdate::ClientUpdate(c.clone())).await.unwrap();
         }
     }
 
     pub async fn watch_websocket(ws_url: String, sender: mpsc::Sender<ConfigUpdate>) {
         let (mut ws, _) = tungstenite::client::connect(ws_url).expect("Failed to connect config source");
-        ws.write_message(Message::text("SERVICES"));
-        ws.write_message(Message::text("CLIENTS"));
-        ws.write_message(Message::text("WATCH"));
+        ws.write_message(Message::text("SERVICES")).unwrap();
+        ws.write_message(Message::text("CLIENTS")).unwrap();
+        ws.write_message(Message::text("WATCH")).unwrap();
         while let Ok(msg) = ws.read_message() {
             match msg {
                 Message::Text(txt) => {
                     let update = serde_json::from_str::<ConfigUpdate>(&txt);
                     if let Ok(up) = update {
-                        sender.send(up);
+                        sender.send(up).await.unwrap();
                     }
                 }
                 _ => {}
@@ -81,7 +83,8 @@ impl Stream for ConfigSource {
     type Item = ConfigUpdate;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.reciever.poll_recv(cx)
+        let mut this = self.project();
+        this.reciever.poll_recv(cx)
     }
 }
 

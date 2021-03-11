@@ -42,13 +42,13 @@ pub struct ServiceLevel {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Upstream {
     pub target: String,
+    pub id: u64,
+    pub timeout: u64,
 }
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct RateLimitSetting {
-    pub methods: String,
-    pub path_regex: String,
     pub interval: i32,  // seconds
     pub limit: i32,
     pub burst: i32,
@@ -57,8 +57,6 @@ pub struct RateLimitSetting {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct HeaderSetting {
-    pub methods: String,
-    pub path_regex: String,
     pub operate_on: String,
     pub injection: Vec<(String, String)>,
     pub removal: Vec<String>,
@@ -85,6 +83,16 @@ pub enum FilterSetting {
     RateLimit(RateLimitSetting),
     Header(HeaderSetting),
     ACL(ACLSetting),
+}
+
+impl FilterSetting {
+    pub fn get_type(setting: &FilterSetting) -> String {
+        match setting {
+            FilterSetting::ACL(_) => "ACL".into(),
+            FilterSetting::Header(_) => "Header".into(),
+            FilterSetting::RateLimit(_) => "RateLimit".into(),
+        }
+    }
 }
 
 

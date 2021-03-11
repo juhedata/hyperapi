@@ -1,127 +1,79 @@
-use std::collections::HashMap;
-use hyper::header::{HeaderName, HeaderValue};
+use hyper::{HeaderMap, header::{HeaderName, HeaderValue}};
 use std::future::Future;
 use std::pin::Pin;
-use crate::middleware::{MwPostRequest, MwPreRequest, Middleware};
+use crate::middleware::{MwPostRequest, MwPreRequest, MwPreResponse, MwPostResponse, Middleware};
 use crate::config::{ConfigUpdate, FilterSetting, HeaderSetting};
 
 
-#[derive(Debug, Clone)]
-pub struct HeaderOperation {
-    pub request_inject: HashMap<String, String>,
-    pub request_remove: Vec<String>,
-    pub response_inject: HashMap<String, String>,
-    pub response_remove: Vec<String>,
-}
-
-impl Default for HeaderOperation {
-    fn default() -> Self {
-        HeaderOperation {
-            request_inject: HashMap::new(),
-            request_remove: Vec::new(),
-            response_inject: HashMap::new(),
-            response_remove: Vec::new(),
-        }
-    }
-}
-
-
-impl HeaderOperation {
-    pub fn add_setting(&mut self, setting: HeaderSetting) {
-        for (k, v) in setting.request_inject {
-            self.request_inject.insert(k, v);
-        }
-        for h in setting.request_remove {
-            self.request_remove.push(h);
-        }
-        for (k, v) in setting.response_inject {
-            self.response_inject.insert(k, v);
-        }
-        for h in setting.response_remove {
-            self.response_remove.push(h);
-        }
-    }
-}
-
-
 #[derive(Debug)]
-pub struct HeaderMiddleware {
-    settings: HashMap<String, HeaderOperation>,
-}
+pub struct HeaderMiddleware {}
 
 
 impl Default for HeaderMiddleware {
     fn default() -> Self {
-        HeaderMiddleware { settings: HashMap::new() }
+        HeaderMiddleware {}
     }
 }
 
 
 impl Middleware for HeaderMiddleware {
 
-    fn name(&self) -> String {
-        "header".into()
+    fn name() -> String {
+        "Header".into()
     }
 
     fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        let MwPreRequest {context, mut request, result} = task;
-        match self.settings.get(&context.service_id) {
-            Some(s) => {
-                let headers = request.headers_mut();
-                for k in s.request_remove.iter() {
-                    let kn = HeaderName::from_bytes(k.as_bytes()).unwrap();
-                    headers.remove(kn);
-                }
-                for (k, v) in s.request_inject.iter() {
-                    let kn = HeaderName::from_bytes(k.as_bytes()).unwrap();
-                    headers.insert(kn, HeaderValue::from_str(v).unwrap());
-                }
+        let MwPreRequest {context, mut request, service_filters, client_filters, result} = task;
+        let mut headers = request.headers_mut();
+        for sf in service_filters {
+            if let FilterSetting::Header(filter) = sf {
+                headers = apply_header_filter(headers, &filter);
             }
-            None => {},
-        };
-        result.send(Ok((request, context))).unwrap();
+        }
+        for cf in client_filters {
+            if let FilterSetting::Header(filter) = cf {
+                headers = apply_header_filter(headers, &filter);
+            }
+        }
+        let resp = MwPreResponse {context: context, request: Some(request), response: None };
+        result.send(resp).unwrap();
         Box::pin(async {})
     }
 
     fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        let MwPostRequest {context, mut response, result} = task;
-        match self.settings.get(&context.service_id) {
-            Some(o) => {
-                let headers = response.headers_mut();
-                for k in o.response_remove.iter() {
-                    let kn = HeaderName::from_bytes(k.as_bytes()).unwrap();
-                    headers.remove(kn);
-                }
-                for (k, v) in o.response_inject.iter() {
-                    let kn = HeaderName::from_bytes(k.as_bytes()).unwrap();
-                    headers.insert(kn, HeaderValue::from_str(v).unwrap());
-                }
-            },
-            None => {},
+        let MwPostRequest {context, mut response, service_filters, client_filters, result} = task;
+        let mut headers = response.headers_mut();
+        for sf in service_filters {
+            if let FilterSetting::Header(filter) = sf {
+                headers = apply_header_filter(headers, &filter);
+            }
         }
-        result.send(response).unwrap();
+        for cf in client_filters {
+            if let FilterSetting::Header(filter) = cf {
+                headers = apply_header_filter(headers, &filter);
+            }
+        }
+        let resp = MwPostResponse {context: context, response: response };
+        result.send(resp).unwrap();
         Box::pin(async {})
     }
 
-    fn config_update(&mut self, update: ConfigUpdate) {
-        match update {
-            ConfigUpdate::ServiceUpdate(service) => {
-                let service_id = service.service_id.clone();
-                let mut ops = HeaderOperation::default();
-                for filter in service.filters {
-                    match filter {
-                        FilterSetting::Header(fs) => {
-                            ops.add_setting(fs);
-                        },
-                        _ => {},
-                    }
-                }
-                self.settings.insert(service_id, ops);
-            },
-            ConfigUpdate::ServiceRemove(sid) => {
-                self.settings.remove(&sid);
-            },
-            _ => {},
-        }
+    fn config_update(&mut self, _update: ConfigUpdate) {}
+    
+}
+
+
+fn apply_header_filter<'a>(header: &'a mut HeaderMap, filter: &HeaderSetting) -> &'a mut HeaderMap {
+    if filter.operate_on != "request" {
+        return header;
     }
+    for k in filter.removal.iter() {
+        let kn = HeaderName::from_lowercase(k.as_bytes()).unwrap();
+        header.remove(kn);
+    }
+    for (k, v) in filter.injection.iter() {
+        let kn = HeaderName::from_lowercase(k.as_bytes()).unwrap();
+        header.insert(kn, HeaderValue::from_str(v).unwrap());
+    }
+    header
 }

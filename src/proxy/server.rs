@@ -1,7 +1,8 @@
 use tokio::sync::{mpsc, broadcast};
 use std::net::SocketAddr;
 use tracing::{event, Level};
-use crate::middleware::{MiddlewareRequest, Middleware, AuthMiddleware, HeaderMiddleware, RateLimitMiddleware, UpstreamMiddleware};
+use crate::middleware::{MiddlewareHandle, Middleware, HeaderMiddleware, RateLimitMiddleware, 
+    UpstreamMiddleware, LoggerMiddleware, ACLMiddleware};
 use crate::config::ConfigSource;
 use super::RequestHandler;
 use crate::auth::{AuthService, AuthRequest};
@@ -10,15 +11,16 @@ use futures::StreamExt;
 use crate::start_middleware_macro;
 
 
+
 pub struct GatewayServer {
-    pub service_stack: Vec<(String, mpsc::Sender<MiddlewareRequest>)>,
+    pub service_stack: Vec<MiddlewareHandle>,
     pub auth_channel: mpsc::Sender<AuthRequest>,
 }
 
 
 impl GatewayServer {
 
-    pub fn new(config: ConfigSource) -> Self {
+    pub fn new(mut config: ConfigSource) -> Self {
 
         let mut stack = Vec::new();
         let (conf_tx, conf_rx) = broadcast::channel(16);
@@ -29,20 +31,22 @@ impl GatewayServer {
         start_middleware_macro!(HeaderMiddleware, stack, conf_tx);
         // start ratelimit middleware
         start_middleware_macro!(RateLimitMiddleware, stack, conf_tx);
-        // start auth middleware
-        start_middleware_macro!(AuthMiddleware, stack, conf_tx);
+        // start acl middleware
+        start_middleware_macro!(ACLMiddleware, stack, conf_tx);
+        // start log middleware
+        start_middleware_macro!(LoggerMiddleware, stack, conf_tx);
 
         tokio::spawn(async move {
             event!(Level::INFO, "Watch Config Update");
             while let Some(config_update) = config.next().await {
-                conf_tx.send(config_update);
+                let _ = conf_tx.send(config_update);
             }
         });
         
         let (auth_tx, auth_rx) = mpsc::channel(16);
         tokio::spawn(async move {
             event!(Level::INFO, "Start auth worker");
-            let auth_service = AuthService::new(conf_rx, auth_rx);
+            let mut auth_service = AuthService::new(conf_rx, auth_rx);
             auth_service.start().await
         });
 

@@ -13,7 +13,7 @@ use tower::util::{BoxService, ServiceExt};
 use std::future::Future;
 use std::pin::Pin;
 use crate::config::{ConfigUpdate, ServiceInfo};
-use crate::middleware::{Middleware, MwPreRequest, MwPostRequest};
+use crate::middleware::{Middleware, MwPreRequest, MwPreResponse, MwPostRequest};
 use crate::middleware::proxy::ProxyHandler;
 use tracing::{event, Level};
 
@@ -29,24 +29,24 @@ impl Default for UpstreamMiddleware {
     }
 }
 
+
 impl UpstreamMiddleware {
 
     async fn service_worker(mut rx: mpsc::Receiver<MwPreRequest>, conf: ServiceInfo) {
-        let us: Vec<String> = conf.upstreams.iter().map(|u| u.target.clone()).collect();
         let timeout = Duration::from_millis(conf.timeout);
         let max_conn = 1000;
 
-        let mut service = match us.len() {
+        let mut service = match conf.upstreams.len() {
             1 => {
-                let u = us.get(0).unwrap();
-                let proxy = Timeout::new(ProxyHandler::new(u.clone()), timeout);
+                let u = conf.upstreams.get(0).unwrap();
+                let proxy = Timeout::new(ProxyHandler::new(u), timeout);
                 let limit = ConcurrencyLimit::new(proxy, max_conn);
                 let service = LoadShed::new(limit);
                 BoxService::new(service)
             },
             _ => {
-                let list: Vec<Timeout<ProxyHandler>> = us.iter().map(|u| {
-                    Timeout::new(ProxyHandler::new(u.clone()), timeout)
+                let list: Vec<Timeout<ProxyHandler>> = conf.upstreams.iter().map(|u| {
+                    Timeout::new(ProxyHandler::new(u), timeout)
                 }).collect();
                 let discover = ServiceList::new(list);
                 let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), CompleteOnResponse::default());
@@ -57,17 +57,16 @@ impl UpstreamMiddleware {
             },
         };
 
-        while let Some(MwPreRequest {context: _, request, result }) = rx.recv().await {
+        while let Some(MwPreRequest {context, request, service_filters: _, client_filters: _, result }) = rx.recv().await {
             event!(Level::DEBUG, "request {:?}", request.uri());
             if let Ok(px) = service.ready_and().await {
                 let f = px.call(request);
                 tokio::spawn(async move {
-                    match f.await {
+                    let proxy_resp: Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>>  = f.await;
+                    match proxy_resp {
                         Ok(resp) => {
-                            match result.send(Err(resp)) {
-                                Ok(_) => {},
-                                Err(_e) => println!("failed to send result"),
-                            }
+                            let response = MwPreResponse { context, request: None, response: Some(resp) };
+                            let _ = result.send(response);
                         },
                         Err(e) => {
                             let msg = format!("Gateway error\n{:?}", e);
@@ -75,8 +74,9 @@ impl UpstreamMiddleware {
                                 .status(StatusCode::BAD_GATEWAY)
                                 .body(Body::from(msg))
                                 .unwrap();
-                            result.send(Err(err)).unwrap();
-                        }
+                            let response = MwPreResponse { context, request: None, response: Some(err) };
+                            let _ = result.send(response);
+                        },
                     }
                 });
             }
@@ -88,8 +88,12 @@ impl UpstreamMiddleware {
 
 impl Middleware for UpstreamMiddleware {
 
-    fn name(&self) -> String {
-        "upstream".into()
+    fn name() -> String {
+        "Upstream".into()
+    }
+
+    fn post() -> bool {
+        false
     }
 
     fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
@@ -104,15 +108,18 @@ impl Middleware for UpstreamMiddleware {
                     .status(StatusCode::BAD_REQUEST)
                     .body(Body::from("Invalid Service Id"))
                     .unwrap();
-                task.result.send(Err(err)).unwrap();
+                let resp = MwPreResponse { 
+                    context: task.context, 
+                    request: Some(task.request), 
+                    response: Some(err),
+                 };
+                task.result.send(resp).unwrap();
             })
         }
     }
 
-    fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        Box::pin(async {
-            task.result.send(task.response).unwrap();
-        })
+    fn response(&mut self, _task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        panic!("never got here");
     }
 
     fn config_update(&mut self, update: ConfigUpdate) {

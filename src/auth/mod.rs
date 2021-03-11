@@ -4,7 +4,6 @@ pub use service::{AuthService, AuthRequest, AuthResponse};
 
 
 
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -18,7 +17,7 @@ mod tests {
         let (conf_tx, conf_rx) = broadcast::channel(16);
         let (auth_tx, auth_rx) = mpsc::channel(16);
         let handler = tokio::spawn(async move {
-            let auth_service = AuthService::new(conf_rx, auth_rx);
+            let mut auth_service = AuthService::new(conf_rx, auth_rx);
             auth_service.start().await
         });
 
@@ -29,7 +28,7 @@ mod tests {
             auth: AuthSetting::AppKey(AppKeyAuth {}),
             timeout: 3000,
             upstreams: vec![
-                Upstream { target: String::from("http://api.leric.net/test/") }
+                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: 1 }
             ],
             filters: vec![
                 FilterSetting::ACL(ACLSetting { 
@@ -40,8 +39,6 @@ mod tests {
                  }),
                 FilterSetting::Header(HeaderSetting { 
                     operate_on: String::from("request"),
-                    methods: String::from("*"),
-                    path_regex: String::from(".*"),
                     injection: vec![(String::from("X-APP-ID"), String::from("hyperapi"))],
                     removal: vec![String::from("Authorization")],
                 }),
@@ -50,8 +47,6 @@ mod tests {
                 name: String::from("Default"), 
                 filters: vec![
                     FilterSetting::RateLimit(RateLimitSetting { 
-                        methods: String::from("*"), 
-                        path_regex: String::from(".*"),
                         interval: 1,
                         limit: 100, 
                         burst: 200,
@@ -59,9 +54,9 @@ mod tests {
                 ],
             }],
         });
-        conf_tx.send(update);
+        conf_tx.send(update).unwrap();
 
-        let client_services = HashMap::new();
+        let mut client_services = HashMap::new();
         client_services.insert(String::from("leric/test"), String::from("Default"));
         let update = ConfigUpdate::ClientUpdate(ClientInfo{ 
             client_id: String::from("leric/app"),
@@ -69,20 +64,21 @@ mod tests {
             ip_whitelist: vec![],
             services: client_services,
         });
-        conf_tx.send(update);
+        conf_tx.send(update).unwrap();
 
         // send request 
         let (tx, rx) = oneshot::channel();
         let req = Request::get("http://api.juhe.cn/api/v1/test").body(Body::empty()).unwrap();
-        let (head, body) = req.into_parts();
+        let (head, _body) = req.into_parts();
         let request = AuthRequest {
             head: head,
             result: tx,
         };
+        let _ = auth_tx.send(request).await;
         // get response
         let result = rx.await;
         assert!(result.is_ok());
-        let resp = result.unwrap();
+        let (_parts, resp) = result.unwrap();
         assert!(resp.service_id.eq("leric/test"));
         assert!(resp.client_id.eq("leric/app"));
         

@@ -4,9 +4,7 @@ use clap::{App, Arg};
 use hyper::Server;
 use hyper::server::conn::AddrStream;
 use hyper::service::make_service_fn;
-use serde_yaml;
 use std::convert::Infallible;
-use serde::{Serialize, Deserialize};
 use hyperapi::config::ConfigSource;
 use hyperapi::proxy::GatewayServer;
 use std::sync::{Arc, Mutex};
@@ -46,7 +44,7 @@ async fn main() {
     let config = matches.value_of("config").unwrap();
     let listen = matches.value_of("listen").unwrap();
 
-    let config_source = ConfigSource::new(config);
+    let config_source = ConfigSource::new(config.into());
     let addr = listen.parse().expect("Invalid listen address");
 
     let server = GatewayServer::new(config_source);

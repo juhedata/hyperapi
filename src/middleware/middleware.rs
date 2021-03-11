@@ -3,24 +3,53 @@ use hyper::{Request, Response, Body, StatusCode};
 use tokio::sync::{mpsc, broadcast};
 use tokio::sync::oneshot;
 use std::future::Future;
-use tracing::{span, event, Level, Instrument};
-use crate::config::{ClientId, ConfigUpdate};
+use tracing::{span, Level, Instrument};
+use crate::{auth::AuthResponse, config::ConfigUpdate, config::FilterSetting};
 use uuid::Uuid;
+
+#[derive(Clone)]
+pub struct MiddlewareHandle {
+    pub name: String,
+    pub pre: bool,
+    pub post: bool, 
+    pub chan: mpsc::Sender<MiddlewareRequest>,
+}
 
 
 #[derive(Debug)]
 pub struct MwPreRequest {
     pub context: RequestContext,
     pub request: Request<Body>,
-    pub result: oneshot::Sender<Result<(Request<Body>, RequestContext), Response<Body>>>,
+    pub service_filters: Vec<FilterSetting>,
+    pub client_filters: Vec<FilterSetting>,
+    pub result: oneshot::Sender<MwPreResponse>,
 }
+
+
+#[derive(Debug)]
+pub struct MwPreResponse {
+    pub context: RequestContext,
+    pub request: Option<Request<Body>>,
+    pub response: Option<Response<Body>>,
+}
+
 
 #[derive(Debug)]
 pub struct MwPostRequest {
     pub context: RequestContext,
     pub response: Response<Body>,
-    pub result: oneshot::Sender<Response<Body>>,
+    pub service_filters: Vec<FilterSetting>,
+    pub client_filters: Vec<FilterSetting>,
+    pub result: oneshot::Sender<MwPostResponse>,
 }
+
+
+#[derive(Debug)]
+pub struct MwPostResponse {
+    pub context: RequestContext,
+    pub response: Response<Body>,
+}
+
 
 #[derive(Debug)]
 pub enum MiddlewareRequest {
@@ -30,7 +59,15 @@ pub enum MiddlewareRequest {
 
 
 pub trait Middleware {
-    fn name(&self) -> String;
+    fn name() -> String;
+
+    fn pre() -> bool {
+        true
+    }
+
+    fn post() -> bool {
+        true
+    }
 
     fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>>;
 
@@ -43,21 +80,44 @@ pub trait Middleware {
 #[derive(Debug, Clone)]
 pub struct RequestContext {
     pub service_id: String,
-    pub client: Option<ClientId>,
+    pub client_id: String,
+    pub sla: String,
     pub args: HashMap<String, String>,
+    pub service_filters: HashMap<String, Vec<FilterSetting>>,
+    pub client_filters: HashMap<String, Vec<FilterSetting>>,
     pub request_id: Uuid,
 }
 
 impl RequestContext {
-    pub fn new(req: &Request<Body>) -> Self {
+    pub fn new(req: &Request<Body>, auth: &AuthResponse) -> Self {
         let service_id = Self::extract_service_id(req);
         let req_id = Self::extract_request_id(req);
-        RequestContext {
+        let mut context = RequestContext {
             service_id,
-            client: None,
+            client_id: auth.client_id.clone(),
+            sla: auth.sla.clone(),
             args: HashMap::new(),
+            service_filters: HashMap::new(),
+            client_filters: HashMap::new(),
             request_id: req_id,
+        };
+        for sf in &auth.service_filters {
+            let filter_type = FilterSetting::get_type(&sf);
+            if let Some(filters) = context.service_filters.get_mut(&filter_type) {
+                filters.push(sf.clone());
+            } else {
+                context.service_filters.insert(filter_type, vec![sf.clone()]);
+            }
         }
+        for cf in &auth.client_filters {
+            let filter_type = FilterSetting::get_type(&cf);
+            if let Some(filters) = context.client_filters.get_mut(&filter_type) {
+                filters.push(cf.clone());
+            } else {
+                context.client_filters.insert(filter_type, vec![cf.clone()]);
+            }
+        }
+        context
     }
 
     fn extract_service_id(req: &Request<Body>) -> String {
@@ -95,22 +155,20 @@ where MW: Middleware + Default
                 match task {
                     Some(MiddlewareRequest::Request(x)) => {
                         let ctx = x.context.clone();
-                        let app_id = ctx.client.map(|x| x.app_id).unwrap_or("".into());
                         let span = span!(Level::DEBUG, "pre_filter",
                                         service=ctx.service_id.as_str(),
                                         trace_id=ctx.request_id.to_string().as_str(),
-                                        app_id=app_id.as_str(),
-                                        middleware=mw.name().as_str());
+                                        app_id=ctx.client_id.as_str(),
+                                        middleware=MW::name().as_str());
                         mw.request(x).instrument(span).await;
                     },
                     Some(MiddlewareRequest::Response(x)) => {
                         let ctx = x.context.clone();
-                        let app_id = ctx.client.map(|x| x.app_id).unwrap_or("".into());
                         let span = span!(Level::DEBUG, "post_filter",
                                         service=ctx.service_id.as_str(),
                                         trace_id=ctx.request_id.to_string().as_str(),
-                                        app_id=app_id.as_str(),
-                                        middleware=mw.name().as_str());
+                                        app_id=ctx.client_id.as_str(),
+                                        middleware=MW::name().as_str());
                         mw.response(x).instrument(span).await;
                     },
                     None => {},
@@ -129,51 +187,86 @@ where MW: Middleware + Default
 }
 
 
-pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stack: Vec<(String, mpsc::Sender<MiddlewareRequest>)>)
+pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stack: Vec<MiddlewareHandle>)
         -> Pin<Box<dyn Future<Output=Response<Body>> + Send>> 
 {
     let depth = mw_stack.len();
     if depth == 0 {
         return Box::pin(async{
-            Response::builder()
+            let resp = Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::from("Middleware misconfiguration"))
-                .unwrap()
+                .unwrap();
+            resp
         });
     }
-    let (_mw_name, mw) = mw_stack.pop().unwrap();
-    let (tx1, rx1) = oneshot::channel();
-    let mw_req = MwPreRequest {
-        context,
-        request: req,
-        result: tx1,
+
+    let MiddlewareHandle {name, chan, pre, post} = mw_stack.pop().unwrap();
+    let service_filters = {
+        if let Some(sfs) = context.service_filters.get(&name) {
+            sfs.clone()
+        } else {
+            Vec::new()
+        }
+    };
+    let client_filters = {
+        if let Some(cfs) = context.client_filters.get(&name) {
+            cfs.clone()
+        } else {
+            Vec::new()
+        }
     };
 
+    let resp_service_filters = service_filters.clone();
+    let resp_client_filters = client_filters.clone();
+
     let fut = async move {
-        mw.send(MiddlewareRequest::Request(mw_req)).await.unwrap();
-        let result = rx1.await.unwrap();
-        match result {
-            Ok((req, ctx)) => {
-                // execute inner middleware
-                let ctx_clone = ctx.clone();
-                let resp = middleware_chain(req, ctx_clone, mw_stack).await;
-                
-                // process response
-                let (tx2, rx2) = oneshot::channel();
-                let mw_resp = MwPostRequest {
-                    context: ctx,
-                    response: resp,
-                    result: tx2,
+        // request middleware pre-filter
+        let MwPreResponse{context, request, response} = {
+            if pre {
+                let (tx, rx) = oneshot::channel();
+                let pre_req = MwPreRequest {
+                    context,
+                    request: req,
+                    service_filters: service_filters,
+                    client_filters: client_filters,
+                    result: tx,
                 };
-                mw.send(MiddlewareRequest::Response(mw_resp)).await.unwrap();
-                let resp = rx2.await.unwrap();
-                resp
-            }, 
-            Err(resp) => {
-                event!(Level::DEBUG, "Got Err<Response>");
-                resp
-            },
+                let _ = chan.send(MiddlewareRequest::Request(pre_req)).await;
+                rx.await.unwrap()
+            } else {
+                MwPreResponse { context, request: Some(req), response: None }
+            }
+        };
+
+        // if pre-filter returns response, terminate chain and return
+        if let Some(early_resp) = response {
+            return early_resp;
         }
+
+        // call inner middleware
+        let context_copy = context.clone();
+        let inner_resp: Response<Body> = middleware_chain(request.unwrap(), context, mw_stack).await;
+
+        // call middleware post-filter
+        let final_resp = {
+            if post {
+                let (tx, rx) = oneshot::channel();
+                let post_req = MwPostRequest {
+                    context: context_copy,
+                    response: inner_resp,
+                    service_filters: resp_service_filters,
+                    client_filters: resp_client_filters,
+                    result: tx,
+                };
+                let _ = chan.send(MiddlewareRequest::Response(post_req)).await;
+                rx.await.unwrap()
+            } else {
+                MwPostResponse { context: context_copy, response: inner_resp }
+            }
+        };
+        
+        final_resp.response
     };
 
     Box::pin(fut)
