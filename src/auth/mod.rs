@@ -11,6 +11,7 @@ mod tests {
     use tokio::sync::{broadcast, mpsc, oneshot};
     use crate::config::*;
     use hyper::{Body, Request};
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_auth_service() {
@@ -66,9 +67,11 @@ mod tests {
         });
         conf_tx.send(update).unwrap();
 
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         // send request 
         let (tx, rx) = oneshot::channel();
-        let req = Request::get("http://api.juhe.cn/api/v1/test").body(Body::empty()).unwrap();
+        let req = Request::get("http://api.juhe.cn/test/v1/test?_app_key=abcdefg").body(Body::empty()).unwrap();
         let (head, _body) = req.into_parts();
         let request = AuthRequest {
             head: head,
@@ -79,6 +82,7 @@ mod tests {
         let result = rx.await;
         assert!(result.is_ok());
         let (_parts, resp) = result.unwrap();
+        println!("{:?}", resp);
         assert!(resp.service_id.eq("leric/test"));
         assert!(resp.client_id.eq("leric/app"));
         

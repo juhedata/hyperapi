@@ -8,6 +8,7 @@ use regex::Regex;
 use serde::{Serialize, Deserialize};
 
 
+#[derive(Debug, Clone)]
 pub struct AuthResponse {
     pub success: bool,
     pub error: String,
@@ -43,8 +44,9 @@ pub struct AuthService {
     conf_receiver: broadcast::Receiver<ConfigUpdate>,
     auth_receiver: mpsc::Receiver<AuthRequest>,
     services: HashMap<String, ServiceAuthInfo>,
-    apps_id: HashMap<String, ClientInfo>,
+    apps: HashMap<String, ClientInfo>,
     apps_key: HashMap<String, String>,
+    service_path: HashMap<String, String>,
 }
 
 
@@ -55,17 +57,21 @@ impl AuthService {
             conf_receiver,
             auth_receiver,
             services: HashMap::new(),
-            apps_id: HashMap::new(),
+            apps: HashMap::new(),
             apps_key: HashMap::new(),
+            service_path: HashMap::new(),
         }
     }
 
     pub async fn start(&mut self) {
+        println!("auth service started");
         loop {
             tokio::select! {
                 conf_update = self.conf_receiver.recv() => {
                     if let Ok(config) = conf_update {
                         self.update_config(config);
+                    } else {
+                        println!("failed to receive config update")
                     }
                 },
                 auth_request = self.auth_receiver.recv() => {
@@ -91,6 +97,7 @@ impl AuthService {
                     slas: slas,
                 };
                 self.services.insert(s.service_id.clone(), service);
+                self.service_path.insert(s.path.clone(), s.service_id.clone());
             },
             ConfigUpdate::ServiceRemove(sid) => {
                 self.services.remove(&sid);
@@ -99,12 +106,12 @@ impl AuthService {
                 let client_id = client.client_id.clone();
                 let client_key = client.app_key.clone();
                 self.apps_key.insert(client_key, client_id);
-                self.apps_id.insert(client.client_id.clone(), client);
+                self.apps.insert(client.client_id.clone(), client);
             },
             ConfigUpdate::ClientRemove(cid) => {
-                if let Some(client) = self.apps_id.get(&cid) {
+                if let Some(client) = self.apps.get(&cid) {
                     self.apps_key.remove(&client.app_key);
-                    self.apps_id.remove(&cid);
+                    self.apps.remove(&cid);
                 }
             },
         }
@@ -112,60 +119,62 @@ impl AuthService {
 
     pub async fn auth_handler(&mut self, task: AuthRequest) {
         let (head, result_channel) = task.into_parts();
-        let service_id = Self::extract_service_id(&head.uri.path());
-        if let Some(service) = self.services.get(&service_id) {
-            match service.auth {
-                AuthSetting::AppKey(_) => {
-                    if let Some(appkey) = Self::get_app_key(&head) {
-                        if let Some(app_id) = self.apps_key.get(&appkey) {
-                            if let Some(client) = self.apps_id.get(app_id) {
-                                if let Some((sla, sf, cf)) = Self::get_filters(client, service) {
-                                    let resp = AuthResponse {
-                                        success: true,
-                                        error: String::from(""),
-                                        client_id: client.client_id.clone(),
-                                        service_id: service.service_id.clone(), 
-                                        sla: sla,
-                                        service_filters: sf,
-                                        client_filters: cf,
-                                    };
-                                    let _ = result_channel.send((head, resp));
-                                    return
+        let service_path = Self::extract_service_path(&head.uri.path());
+        if let Some(service_id) = self.service_path.get(&service_path) {
+            if let Some(service) = self.services.get(service_id) {
+                match service.auth {
+                    AuthSetting::AppKey(_) => {
+                        if let Some(appkey) = Self::get_app_key(&head) {
+                            if let Some(app_id) = self.apps_key.get(&appkey) {
+                                if let Some(client) = self.apps.get(app_id) {
+                                    if let Some((sla, sf, cf)) = Self::get_filters(client, service) {
+                                        let resp = AuthResponse {
+                                            success: true,
+                                            error: String::from(""),
+                                            client_id: client.client_id.clone(),
+                                            service_id: service.service_id.clone(),
+                                            sla: sla,
+                                            service_filters: sf,
+                                            client_filters: cf,
+                                        };
+                                        let _ = result_channel.send((head, resp));
+                                        return
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-                AuthSetting::JWT(_) => {
-                    if let Some(app_id) =  Self::get_jwt_app_id(&head, None) {
-                        if let Some(client) = self.apps_id.get(&app_id) {
-                            if let Some(_app_id) =  Self::get_jwt_app_id(&head, Some(client.app_key.clone())) {
-                                if let Some((sla, sf,  cf)) = Self::get_filters(client, service) {
-                                    let resp = AuthResponse {
-                                        success: true,
-                                        error: String::from(""),
-                                        client_id: client.client_id.clone(),
-                                        service_id: service.service_id.clone(), 
-                                        sla: sla,
-                                        service_filters: sf,
-                                        client_filters: cf,
-                                    };
-                                    let _ = result_channel.send((head, resp));
-                                    return
+                    },
+                    AuthSetting::JWT(_) => {
+                        if let Some(app_id) =  Self::get_jwt_app_id(&head, None) {
+                            if let Some(client) = self.apps.get(&app_id) {
+                                if let Some(_app_id) =  Self::get_jwt_app_id(&head, Some(client.app_key.clone())) {
+                                    if let Some((sla, sf,  cf)) = Self::get_filters(client, service) {
+                                        let resp = AuthResponse {
+                                            success: true,
+                                            error: String::from(""),
+                                            client_id: client.client_id.clone(),
+                                            service_id: service.service_id.clone(),
+                                            sla: sla,
+                                            service_filters: sf,
+                                            client_filters: cf,
+                                        };
+                                        let _ = result_channel.send((head, resp));
+                                        return
+                                    }
                                 }
                             }
                         }
-                    }
-                },
+                    },
+                }
             }
         }
 
-        if service_id == "metrics" {  // bypass auth
+        if service_path == "/metrics" {  // bypass auth
             let _ = result_channel.send((head, AuthResponse { 
                 success: true, 
                 error: "Bypass".into(), 
                 client_id: "".into(),
-                service_id: service_id, 
+                service_id: "".into(),
                 sla: "".into(),
                 service_filters: vec![],
                 client_filters: vec![],
@@ -176,7 +185,7 @@ impl AuthService {
                 success: false, 
                 error: "Auth failed".into(), 
                 client_id: "".into(),
-                service_id: service_id, 
+                service_id: "".into(),
                 sla: "".into(),
                 service_filters: vec![],
                 client_filters: vec![],
@@ -193,9 +202,9 @@ impl AuthService {
         None
     }
 
-    fn extract_service_id(path: &str) -> String {
+    fn extract_service_path(path: &str) -> String {
         let path = path.strip_prefix("/").unwrap();
-        let (service_id, _path) = match path.find("/") {
+        let (service_path, _path) = match path.find("/") {
             Some(pos) => {
                 path.split_at(pos)
             },
@@ -203,7 +212,7 @@ impl AuthService {
                 (path, "")
             }
         };
-        String::from(service_id)
+        format!("/{}", service_path)
     }
     
     fn get_app_key(head: &Parts) -> Option<String> {

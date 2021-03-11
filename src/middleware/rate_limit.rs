@@ -72,7 +72,7 @@ impl Middleware for RateLimitMiddleware {
     }
 
     fn response(&mut self, _task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        todo!()
+        panic!("never got here")
     }
 
     fn config_update(&mut self, update: ConfigUpdate) {
