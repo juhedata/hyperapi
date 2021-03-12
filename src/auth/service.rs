@@ -6,6 +6,7 @@ use jsonwebtoken as jwt;
 use std::time::SystemTime;
 use regex::Regex;
 use serde::{Serialize, Deserialize};
+use base64;
 
 
 #[derive(Debug, Clone)]
@@ -147,7 +148,7 @@ impl AuthService {
                     AuthSetting::JWT(_) => {
                         if let Some(app_id) =  Self::get_jwt_app_id(&head, None) {
                             if let Some(client) = self.apps.get(&app_id) {
-                                if let Some(_app_id) =  Self::get_jwt_app_id(&head, Some(client.app_key.clone())) {
+                                if let Some(_) =  Self::get_jwt_app_id(&head, Some(client.app_key.clone())) {
                                     if let Some((sla, sf,  cf)) = Self::get_filters(client, service) {
                                         let resp = AuthResponse {
                                             success: true,
@@ -245,9 +246,10 @@ impl AuthService {
             let token = *(segs.get(1).unwrap_or(&""));
             let t = {
                 if let Some(key) = appkey {
-                    let v = jwt::Validation::new(jwt::Algorithm::ES256);
-                    let vkey = key;
-                    jwt::decode::<JwtClaims>(&token, &jwt::DecodingKey::from_secret(vkey.as_bytes()), &v)
+                    let verifier = jwt::Validation::new(jwt::Algorithm::ES256);
+                    let pubkey = base64::decode_config(key, base64::URL_SAFE).unwrap();
+                    let verify_key = jwt::DecodingKey::from_ec_der(pubkey.as_slice());
+                    jwt::decode::<JwtClaims>(&token, &verify_key, &verifier)
                 } else {
                     jwt::dangerous_insecure_decode::<JwtClaims>(token)
                 }
