@@ -262,15 +262,14 @@ impl AuthService {
         }
         None
     }
-    
+
 }
 
+
 #[derive(Debug, Serialize, Deserialize)]
-struct JwtClaims {
-    pub aud: Option<String>,         // Optional. Audience
-    pub exp: u64,                  // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
-    pub iat: Option<usize>,          // Optional. Issued at (as UTC timestamp)
+pub struct JwtClaims {
+    pub exp: u64,                    // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
+    pub iat: Option<u64>,            // Optional. Issued at (as UTC timestamp)
     pub iss: Option<String>,         // Optional. Issuer
-    pub nbf: Option<usize>,          // Optional. Not Before (as UTC timestamp)
     pub sub: String,                 // Optional. Subject (whom token refers to)
 }
