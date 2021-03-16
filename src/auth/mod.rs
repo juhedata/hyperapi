@@ -50,7 +50,7 @@ mod tests {
             auth: AuthSetting::AppKey(AppKeyAuth {}),
             timeout: 3000,
             upstreams: vec![
-                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: 1 }
+                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into() }
             ],
             filters: vec![
                 FilterSetting::Header(HeaderSetting { 
@@ -80,7 +80,7 @@ mod tests {
             auth: AuthSetting::JWT(JwtAuth {}),
             timeout: 3000,
             upstreams: vec![
-                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: 1 }
+                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into() }
             ],
             filters: vec![
                 FilterSetting::ACL(ACLSetting {

@@ -90,10 +90,9 @@ pub struct RequestContext {
 
 impl RequestContext {
     pub fn new(req: &Request<Body>, auth: &AuthResponse) -> Self {
-        let service_id = Self::extract_service_id(req);
         let req_id = Self::extract_request_id(req);
         let mut context = RequestContext {
-            service_id,
+            service_id: auth.service_id.clone(),
             client_id: auth.client_id.clone(),
             sla: auth.sla.clone(),
             args: HashMap::new(),

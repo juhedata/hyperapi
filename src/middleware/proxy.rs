@@ -14,7 +14,7 @@ use crate::config::Upstream;
 
 #[derive(Debug, Clone)]
 pub struct ProxyHandler {
-    upstream_id: u64,
+    upstream_id: String,
     upstream: String,
     client: Client<HttpsConnector<HttpConnector>, Body>,
 }
@@ -26,7 +26,7 @@ impl ProxyHandler {
         let client = Client::builder()
             .pool_idle_timeout(Duration::from_secs(upstream.timeout))
             .build::<_, Body>(tls);
-        ProxyHandler { client: client, upstream: upstream.target.clone(), upstream_id: upstream.id }
+        ProxyHandler { client: client, upstream: upstream.target.clone(), upstream_id: upstream.id.clone() }
     }
 
     fn alter_request(req: Request<Body>, endpoint: &str) -> Request<Body> {

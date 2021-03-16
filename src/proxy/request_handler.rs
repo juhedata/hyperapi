@@ -12,6 +12,7 @@ use tracing::{event, span, Level, Instrument};
 pub struct RequestHandler {
     pub stack: Vec<MiddlewareHandle>,
     pub auth: mpsc::Sender<AuthRequest>,
+    pub ready: u8,
 }
 
 
@@ -25,6 +26,18 @@ impl Service<Request<Body>> for RequestHandler {
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
+        if self.ready == 0 {  // starting
+            return Box::pin(async {
+                Ok(Response::new("Server is initializing...".into()))
+            })
+        }
+
+        if self.ready == 2 {  // closing
+            return Box::pin(async {
+                Ok(Response::new("Server is closing...".into()))
+            })
+        }
+
         let stack = self.stack.clone();
         let auth = self.auth.clone();
 

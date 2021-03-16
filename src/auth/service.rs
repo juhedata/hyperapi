@@ -78,6 +78,8 @@ impl AuthService {
                 auth_request = self.auth_receiver.recv() => {
                     if let Some(req) = auth_request {
                         self.auth_handler(req).await;
+                    } else {
+                        println!("failed to receive auth request")
                     }
                 },
             }
@@ -115,6 +117,7 @@ impl AuthService {
                     self.apps.remove(&cid);
                 }
             },
+            _ => {},
         }
     }
 
@@ -133,7 +136,7 @@ impl AuthService {
                                             success: true,
                                             error: String::from(""),
                                             client_id: client.client_id.clone(),
-                                            service_id: service.service_id.clone(),
+                                            service_id: service_id.clone(),
                                             sla: sla,
                                             service_filters: sf,
                                             client_filters: cf,

@@ -121,6 +121,7 @@ impl Middleware for RateLimitMiddleware {
                 self.service_limit.remove(&service_id);
                 self.client_limit.remove(&service_id);
             },
+            _ => {},
         }
     }
 

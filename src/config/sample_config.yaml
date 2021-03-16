@@ -11,14 +11,14 @@ services:
       - type: Header
         operate_on: "request"
         injection:
-          X-Authentication: "source-authenticate-token"
+          - ['X-Authentication', "source-authenticate-token"]
         removal:
           - "Authentication"
       - type: ACL
         access_control: "allow" 
         paths: 
           - methods: "GET,POST,DELETE,PUT,OPTIONS,PATCH"
-            path_regex: "\/user\/.*"
+            path_regex: "/user/.*"
 
     sla:
       - name: Default

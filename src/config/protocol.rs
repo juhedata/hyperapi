@@ -42,7 +42,7 @@ pub struct ServiceLevel {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Upstream {
     pub target: String,
-    pub id: u64,
+    pub id: String,
     pub timeout: u64,
 }
 

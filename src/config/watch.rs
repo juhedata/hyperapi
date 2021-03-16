@@ -10,7 +10,7 @@ use pin_project::pin_project;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ServiceConfig {
-    pub apps: Vec<ClientInfo>,
+    pub clients: Vec<ClientInfo>,
     pub services: Vec<ServiceInfo>,
 }
 
@@ -21,6 +21,7 @@ pub enum ConfigUpdate {
     ServiceRemove(String),
     ClientUpdate(ClientInfo),
     ClientRemove(String),
+    ConfigReady(bool),
 }
 
 #[pin_project]
@@ -33,7 +34,7 @@ pub struct ConfigSource {
 impl ConfigSource {
     pub fn new(source: String) -> Self {
         let (tx, rx) = mpsc::channel(16);
-        if source.starts_with("file://") {
+        if source.starts_with("file:///") {
             tokio::spawn(async move {
                 ConfigSource::load_config_file(source, tx).await
             });
@@ -48,15 +49,20 @@ impl ConfigSource {
     }
 
     pub async fn load_config_file(config_file: String, sender: mpsc::Sender<ConfigUpdate>) {
+        let config_file = config_file.replace("file:///", "");
         let content = tokio::fs::read_to_string(config_file).await.expect("Failed to read config file");
         let config = serde_yaml::from_str::<ServiceConfig>(&content).expect("Failed to parse config file");
         for s in config.services.iter() {
+            println!("{:?}", s);
             sender.send(ConfigUpdate::ServiceUpdate(s.clone())).await.unwrap();
         }
 
-        for c in config.apps.iter() {
+        for c in config.clients.iter() {
+            println!("{:?}", c);
             sender.send(ConfigUpdate::ClientUpdate(c.clone())).await.unwrap();
         }
+        
+        sender.send(ConfigUpdate::ConfigReady(true)).await.unwrap();
     }
 
     pub async fn watch_websocket(ws_url: String, sender: mpsc::Sender<ConfigUpdate>) {
