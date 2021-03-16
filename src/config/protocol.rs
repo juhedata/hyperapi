@@ -78,12 +78,13 @@ pub struct PathMatcher {
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(tag = "type")]
+#[serde(tag="type", content="setting")]
 pub enum FilterSetting {
     RateLimit(RateLimitSetting),
     Header(HeaderSetting),
     ACL(ACLSetting),
 }
+
 
 impl FilterSetting {
     pub fn get_type(setting: &FilterSetting) -> String {
@@ -94,7 +95,6 @@ impl FilterSetting {
         }
     }
 }
-
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

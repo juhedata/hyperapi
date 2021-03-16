@@ -9,28 +9,32 @@ services:
       - { id: 12, timeout: 10, target: "http://127.0.0.1:8000/" }
     filters:
       - type: Header
-        operate_on: "request"
-        injection:
-          - ['X-Authentication', "source-authenticate-token"]
-        removal:
-          - "Authentication"
+        setting:
+          operate_on: "request"
+          injection:
+            - ['X-Authentication', "source-authenticate-token"]
+          removal:
+            - "Authentication"
       - type: ACL
-        access_control: "allow" 
-        paths: 
-          - methods: "GET,POST,DELETE,PUT,OPTIONS,PATCH"
-            path_regex: "/user/.*"
+        setting:
+          access_control: "allow"
+          paths:
+            - methods: "GET,POST,DELETE,PUT,OPTIONS,PATCH"
+              path_regex: "/user/.*"
 
     sla:
       - name: Default
         filters:
           - type: RateLimit
-            interval: 60
-            limit: 100
-            burst: 100
+            setting:
+              interval: 60
+              limit: 100
+              burst: 100
           - type: RateLimit
-            interval: 1
-            limit: 100
-            burst: 200
+            setting:
+              interval: 1
+              limit: 100
+              burst: 200
 
 clients:
   - client_id: account/crm

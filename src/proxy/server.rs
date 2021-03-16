@@ -44,6 +44,7 @@ impl GatewayServer {
         tokio::spawn(async move {
             event!(Level::INFO, "Watch Config Update");
             while let Some(config_update) = config.next().await {
+                println!("Receive ConfigReady: {:?}", config_update);
                 if let ConfigUpdate::ConfigReady(_) = config_update {
                     let mut lock = init_status.lock().unwrap();
                     *lock = 1;
@@ -59,7 +60,12 @@ impl GatewayServer {
             auth_service.start().await
         });
 
-        GatewayServer { service_stack: stack, auth_channel: auth_tx, status: server_status, config_channel: config_channel }
+        GatewayServer {
+            service_stack: stack,
+            auth_channel: auth_tx,
+            status: server_status,
+            config_channel,
+        }
     }
 
 

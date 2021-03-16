@@ -119,19 +119,6 @@ impl RequestContext {
         context
     }
 
-    fn extract_service_id(req: &Request<Body>) -> String {
-        let path = req.uri().path().strip_prefix("/").unwrap();
-        let (service_id, _path) = match path.find("/") {
-            Some(pos) => {
-                path.split_at(pos)
-            },
-            None => {
-                (path, "")
-            }
-        };
-        String::from(service_id)
-    }
-
     fn extract_request_id(_req: &Request<Body>) -> Uuid {
         // if let Some(value) = req.headers().get("request_id".into()) {
         //     if let Ok(id) = Uuid::parse_str(value.to_str().unwrap_or("")) {
