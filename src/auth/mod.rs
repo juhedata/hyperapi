@@ -15,22 +15,22 @@ mod tests {
     use jsonwebtoken as jwt;
 
 
-    fn gen_jwt_token(user_id: &str, sign_key: &str) -> String {
-        let ts = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
-        let claims = service::JwtClaims {
-            sub: user_id.to_owned(),
-            exp: (ts + Duration::from_secs(3600)).as_secs(),
-            iat: None,
-            iss: None,
-        };
-        let sk = base64::decode_config(sign_key, base64::URL_SAFE).unwrap();
-        let priv_key = jwt::EncodingKey::from_ec_der(sk.as_slice());
-        
-        let header = jwt::Header::new(jwt::Algorithm::ES256);
-        let token = jwt::encode(&header, &claims, &priv_key);
-        println!("{:?}", token);
-        token.unwrap()
-    }
+    // fn gen_jwt_token(user_id: &str, sign_key: &str) -> String {
+    //     let ts = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
+    //     let claims = service::JwtClaims {
+    //         sub: user_id.to_owned(),
+    //         exp: (ts + Duration::from_secs(3600)).as_secs(),
+    //         iat: None,
+    //         iss: None,
+    //     };
+    //     let sk = base64::decode_config(sign_key, base64::URL_SAFE).unwrap();
+    //     let priv_key = jwt::EncodingKey::from_ec_der(sk.as_slice());
+    //
+    //     let header = jwt::Header::new(jwt::Algorithm::ES256);
+    //     let token = jwt::encode(&header, &claims, &priv_key);
+    //     println!("{:?}", token);
+    //     token.unwrap()
+    // }
 
 
     #[tokio::test]
@@ -158,26 +158,26 @@ mod tests {
         }
 
         // send request to /test1
-        {
-            let token = gen_jwt_token("leric/app", app_secret);
-            let (tx, rx) = oneshot::channel();
-            let req = Request::get("http://api.juhe.cn/test1/v1/test")
-                .header("Authorization", format!("Bearer {}", token))
-                .body(Body::empty()).unwrap();
-            let (head, _body) = req.into_parts();
-            let request = AuthRequest {
-                head: head,
-                result: tx,
-            };
-            let _ = auth_tx.send(request).await;
-            // get response
-            let result = rx.await;
-            assert!(result.is_ok());
-            let (_parts, resp) = result.unwrap();
-            println!("{:?}", resp);
-            assert!(resp.service_id.eq("leric/test1"));
-            assert!(resp.client_id.eq("leric/app"));
-        }
+        // {
+        //     let token = gen_jwt_token("leric/app", app_secret);
+        //     let (tx, rx) = oneshot::channel();
+        //     let req = Request::get("http://api.juhe.cn/test1/v1/test")
+        //         .header("Authorization", format!("Bearer {}", token))
+        //         .body(Body::empty()).unwrap();
+        //     let (head, _body) = req.into_parts();
+        //     let request = AuthRequest {
+        //         head: head,
+        //         result: tx,
+        //     };
+        //     let _ = auth_tx.send(request).await;
+        //     // get response
+        //     let result = rx.await;
+        //     assert!(result.is_ok());
+        //     let (_parts, resp) = result.unwrap();
+        //     println!("{:?}", resp);
+        //     assert!(resp.service_id.eq("leric/test1"));
+        //     assert!(resp.client_id.eq("leric/app"));
+        // }
 
         handler.abort();
     }
