@@ -8,12 +8,23 @@ use std::task::{Poll, Context};
 use std::future::Future;
 use std::time::Duration;
 use tracing::{event, Level};
-
 use crate::config::Upstream;
+
+
+lazy_static::lazy_static! {
+
+    static ref HTTP_REQ_INPROGRESS: prometheus::IntGaugeVec = prometheus::register_int_gauge_vec!(
+        "gateway_requests_in_progress",
+        "Request in progress count",
+        &["service", "upstream"]
+    ).unwrap();
+
+}
 
 
 #[derive(Debug, Clone)]
 pub struct ProxyHandler {
+    service_id: String,
     upstream_id: String,
     upstream: String,
     client: Client<HttpsConnector<HttpConnector>, Body>,
@@ -21,12 +32,17 @@ pub struct ProxyHandler {
 
 impl ProxyHandler {
 
-    pub fn new(upstream: &Upstream) -> Self {
+    pub fn new(service_id: &str, upstream: &Upstream) -> Self {
         let tls = HttpsConnector::with_native_roots();
         let client = Client::builder()
             .pool_idle_timeout(Duration::from_secs(upstream.timeout))
             .build::<_, Body>(tls);
-        ProxyHandler { client: client, upstream: upstream.target.clone(), upstream_id: upstream.id.clone() }
+        ProxyHandler { 
+            service_id: String::from(service_id), 
+            client, 
+            upstream: upstream.target.clone(), 
+            upstream_id: upstream.id.clone(),
+        }
     }
 
     fn alter_request(req: Request<Body>, endpoint: &str) -> Request<Body> {
@@ -64,8 +80,17 @@ impl Service<Request<Body>> for ProxyHandler
         event!(Level::DEBUG, "{:?}", req.uri());
         let f = self.client.request(req);
         let upstream_id = self.upstream_id.to_string();
+        let service_id = self.service_id.clone();
+        HTTP_REQ_INPROGRESS.with_label_values(&[
+            &service_id, 
+            &upstream_id,
+        ]).inc();
         Box::pin(async move {
             let mut resp = f.await.unwrap();
+            HTTP_REQ_INPROGRESS.with_label_values(&[
+                &service_id, 
+                &upstream_id,
+            ]).dec();
             let header = resp.headers_mut();
             let header_value = HeaderValue::from_str(&upstream_id).unwrap();
             header.append("X-UPSTREAM-ID", header_value);

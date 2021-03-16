@@ -173,28 +173,16 @@ impl AuthService {
             }
         }
 
-        if service_path == "/metrics" {  // bypass auth
-            let _ = result_channel.send((head, AuthResponse { 
-                success: true, 
-                error: "Bypass".into(), 
-                client_id: "".into(),
-                service_id: "".into(),
-                sla: "".into(),
-                service_filters: vec![],
-                client_filters: vec![],
-            }));
-        } else {
-            // no match, return error
-            let _ = result_channel.send((head, AuthResponse { 
-                success: false, 
-                error: "Auth failed".into(), 
-                client_id: "".into(),
-                service_id: "".into(),
-                sla: "".into(),
-                service_filters: vec![],
-                client_filters: vec![],
-            }));
-        }
+        // no match, return error
+        let _ = result_channel.send((head, AuthResponse { 
+            success: false, 
+            error: "Auth failed".into(), 
+            client_id: "".into(),
+            service_id: "".into(),
+            sla: "".into(),
+            service_filters: vec![],
+            client_filters: vec![],
+        }));
     }
 
     fn get_filters(client: &ClientInfo, service: &ServiceAuthInfo) -> Option<(String, Vec<FilterSetting>, Vec<FilterSetting>)> {

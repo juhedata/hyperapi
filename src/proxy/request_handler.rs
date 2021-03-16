@@ -56,16 +56,12 @@ impl Service<Request<Body>> for RequestHandler {
 
             // handle request
             if let Ok((head_part, auth_resp)) = auth_result {
-                if auth_resp.success {
-                    let req = Request::from_parts(head_part, body);
-                    let context = RequestContext::new(&req, &auth_resp);
-                    let resp: Response<Body> = middleware_chain(req, context, stack).await;
-                    Ok(resp)
-                } else {
-                    Ok(Response::new(auth_resp.error.into()))
-                }
+                let req = Request::from_parts(head_part, body);
+                let context = RequestContext::new(&req, &auth_resp);
+                let resp: Response<Body> = middleware_chain(req, context, stack).await;
+                Ok(resp)
             } else {
-                Ok(Response::new("Auth Failed".into()))
+                Ok(Response::builder().status(502).body("Gateway Error".into()).unwrap())
             }
         }.instrument(span))
     }

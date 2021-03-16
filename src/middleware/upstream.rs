@@ -21,6 +21,7 @@ use tracing::{event, Level};
 #[derive(Debug)]
 pub struct UpstreamMiddleware {
     pub worker_queues: HashMap<String, mpsc::Sender<MwPreRequest>>,
+    
 }
 
 impl Default for UpstreamMiddleware {
@@ -35,18 +36,17 @@ impl UpstreamMiddleware {
     async fn service_worker(mut rx: mpsc::Receiver<MwPreRequest>, conf: ServiceInfo) {
         let timeout = Duration::from_millis(conf.timeout);
         let max_conn = 1000;
-
         let mut service = match conf.upstreams.len() {
             1 => {
                 let u = conf.upstreams.get(0).unwrap();
-                let proxy = Timeout::new(ProxyHandler::new(u), timeout);
+                let proxy = Timeout::new(ProxyHandler::new(&conf.service_id, u), timeout);
                 let limit = ConcurrencyLimit::new(proxy, max_conn);
                 let service = LoadShed::new(limit);
                 BoxService::new(service)
             },
             _ => {
                 let list: Vec<Timeout<ProxyHandler>> = conf.upstreams.iter().map(|u| {
-                    Timeout::new(ProxyHandler::new(u), timeout)
+                    Timeout::new(ProxyHandler::new(&conf.service_id, u), timeout)
                 }).collect();
                 let discover = ServiceList::new(list);
                 let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), CompleteOnResponse::default());
