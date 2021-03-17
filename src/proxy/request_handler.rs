@@ -61,7 +61,7 @@ impl Service<Request<Body>> for RequestHandler {
                 let resp: Response<Body> = middleware_chain(req, context, stack).await;
                 Ok(resp)
             } else {
-                Ok(Response::builder().status(502).body("Auth Error".into()).unwrap())
+                Ok(Response::builder().status(502).body("Auth Service Error".into()).unwrap())
             }
         }.instrument(span))
     }

@@ -127,10 +127,14 @@ impl Middleware for UpstreamMiddleware {
             ConfigUpdate::ServiceUpdate(conf) => {
                 let (tx, rx) = mpsc::channel(10);
                 let service_id = conf.service_id.clone();
-                tokio::spawn(async move {
-                    Self::service_worker(rx, conf).await;
-                });
-                self.worker_queues.insert(service_id, tx);
+                if (&conf.upstreams).len() > 0 {
+                    tokio::spawn(async move {
+                        Self::service_worker(rx, conf).await;
+                    });
+                    self.worker_queues.insert(service_id, tx);
+                } else {
+                    self.worker_queues.remove(&service_id);
+                }
             },
             ConfigUpdate::ServiceRemove(sid) => {
                 self.worker_queues.remove(&sid);

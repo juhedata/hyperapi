@@ -124,6 +124,7 @@ impl AuthService {
     pub async fn auth_handler(&mut self, task: AuthRequest) {
         let (head, result_channel) = task.into_parts();
         let service_path = Self::extract_service_path(&head.uri.path());
+        let mut error = String::from("");
         if let Some(service_id) = self.service_path.get(&service_path) {
             if let Some(service) = self.services.get(service_id) {
                 match service.auth {
@@ -134,7 +135,7 @@ impl AuthService {
                                     if let Some((sla, sf, cf)) = Self::get_filters(client, service) {
                                         let resp = AuthResponse {
                                             success: true,
-                                            error: String::from(""),
+                                            error: error,
                                             client_id: client.client_id.clone(),
                                             service_id: service_id.clone(),
                                             sla: sla,
@@ -143,9 +144,17 @@ impl AuthService {
                                         };
                                         let _ = result_channel.send((head, resp));
                                         return
+                                    } else {
+                                        error = "No available SLA assigned".into();
                                     }
+                                } else {
+                                    error = "Invalid app-id".into();
                                 }
+                            } else {
+                                error = "Invalid app-key".into();
                             }
+                        } else {
+                            error = "Failed to extract app-key".into();
                         }
                     },
                     AuthSetting::JWT(_) => {
@@ -155,7 +164,7 @@ impl AuthService {
                                     if let Some((sla, sf,  cf)) = Self::get_filters(client, service) {
                                         let resp = AuthResponse {
                                             success: true,
-                                            error: String::from(""),
+                                            error: error,
                                             client_id: client.client_id.clone(),
                                             service_id: service.service_id.clone(),
                                             sla: sla,
@@ -164,19 +173,31 @@ impl AuthService {
                                         };
                                         let _ = result_channel.send((head, resp));
                                         return
+                                    } else {
+                                        error = "No available SLA assigned".into();
                                     }
+                                } else {
+                                    error = "Invalid JWT signature".into();
                                 }
+                            } else {
+                                error = "Invalid app-id".into();
                             }
+                        } else {
+                            error = "Invalid JWT payload".into();
                         }
                     },
                 }
+            } else {
+                error = format!("No service matched for service_id {}", service_id);
             }
+        } else {
+            error = format!("No service matched for path {}", service_path);
         }
 
         // no match, return error
         let _ = result_channel.send((head, AuthResponse { 
             success: false, 
-            error: "Auth failed".into(), 
+            error: error,
             client_id: "".into(),
             service_id: "".into(),
             sla: "".into(),

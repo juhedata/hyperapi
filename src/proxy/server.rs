@@ -44,7 +44,7 @@ impl GatewayServer {
         tokio::spawn(async move {
             event!(Level::INFO, "Watch Config Update");
             while let Some(config_update) = config.next().await {
-                println!("Receive ConfigReady: {:?}", config_update);
+                println!("Receive Config Update: {:?}", config_update);
                 if let ConfigUpdate::ConfigReady(_) = config_update {
                     let mut lock = init_status.lock().unwrap();
                     *lock = 1;

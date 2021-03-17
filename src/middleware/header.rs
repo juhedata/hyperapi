@@ -27,12 +27,12 @@ impl Middleware for HeaderMiddleware {
         let mut headers = request.headers_mut();
         for sf in service_filters {
             if let FilterSetting::Header(filter) = sf {
-                headers = apply_header_filter(headers, &filter);
+                headers = apply_header_filter(headers, &filter, "request");
             }
         }
         for cf in client_filters {
             if let FilterSetting::Header(filter) = cf {
-                headers = apply_header_filter(headers, &filter);
+                headers = apply_header_filter(headers, &filter, "request");
             }
         }
         let resp = MwPreResponse {context: context, request: Some(request), response: None };
@@ -45,12 +45,12 @@ impl Middleware for HeaderMiddleware {
         let mut headers = response.headers_mut();
         for sf in service_filters {
             if let FilterSetting::Header(filter) = sf {
-                headers = apply_header_filter(headers, &filter);
+                headers = apply_header_filter(headers, &filter, "response");
             }
         }
         for cf in client_filters {
             if let FilterSetting::Header(filter) = cf {
-                headers = apply_header_filter(headers, &filter);
+                headers = apply_header_filter(headers, &filter, "response");
             }
         }
         let resp = MwPostResponse {context: context, response: response };
@@ -63,8 +63,8 @@ impl Middleware for HeaderMiddleware {
 }
 
 
-fn apply_header_filter<'a>(header: &'a mut HeaderMap, filter: &HeaderSetting) -> &'a mut HeaderMap {
-    if filter.operate_on != "request" {
+fn apply_header_filter<'a>(header: &'a mut HeaderMap, filter: &HeaderSetting, operate_on: &str) -> &'a mut HeaderMap {
+    if !filter.operate_on.eq(operate_on) {
         return header;
     }
     for k in filter.removal.iter() {

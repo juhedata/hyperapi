@@ -105,6 +105,9 @@ impl RequestContext {
             client_filters: HashMap::new(),
             request_id: req_id,
         };
+        if auth.error.len() > 0 {
+            context.args.insert("ERROR".into(), auth.error.clone());
+        }
         for sf in &auth.service_filters {
             let filter_type = FilterSetting::get_type(&sf);
             if let Some(filters) = context.service_filters.get_mut(&filter_type) {

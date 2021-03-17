@@ -72,6 +72,7 @@ impl Middleware for LoggerMiddleware {
         let MwPreRequest {mut context, request, service_filters: _, client_filters: _, result} = task;
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         context.args.insert("TS".into(), ts.as_secs_f64().to_string());
+
         if context.service_id.len() == 0 || context.client_id.len() == 0 {  // auth failed, or metrics request
             let url = request.uri().path();
             let listen_path = Self::extract_service_path(url);
@@ -80,7 +81,14 @@ impl Middleware for LoggerMiddleware {
                 let response = MwPreResponse {context: context, request: Some(request), response: Some(resp) };
                 result.send(response).unwrap();
             } else {
-                let resp = Response::builder().status(502).body("Gateway Error".into()).unwrap();
+                let error = {
+                    if let Some(e) = context.args.get("ERROR") {
+                        e.clone()
+                    } else {
+                        String::from("Authentication Error")
+                    }
+                };
+                let resp = Response::builder().status(403).body(error.into()).unwrap();
                 let response = MwPreResponse {context: context, request: Some(request), response: Some(resp) };
                 result.send(response).unwrap();
             }
