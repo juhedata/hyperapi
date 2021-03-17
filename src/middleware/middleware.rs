@@ -81,6 +81,8 @@ pub trait Middleware {
 pub struct RequestContext {
     pub service_id: String,
     pub client_id: String,
+    pub service_path: String,
+    pub api_path: String,
     pub sla: String,
     pub args: HashMap<String, String>,
     pub service_filters: HashMap<String, Vec<FilterSetting>>,
@@ -91,9 +93,12 @@ pub struct RequestContext {
 impl RequestContext {
     pub fn new(req: &Request<Body>, auth: &AuthResponse) -> Self {
         let req_id = Self::extract_request_id(req);
+        let (service_path, api_path) = Self::extract_path(req.uri().path());
         let mut context = RequestContext {
             service_id: auth.service_id.clone(),
             client_id: auth.client_id.clone(),
+            service_path,
+            api_path,
             sla: auth.sla.clone(),
             args: HashMap::new(),
             service_filters: HashMap::new(),
@@ -117,6 +122,19 @@ impl RequestContext {
             }
         }
         context
+    }
+
+    fn extract_path(path: &str) -> (String, String) {
+        let path = path.strip_prefix("/").unwrap();
+        let (service_path, api_path) = match path.find("/") {
+            Some(pos) => {
+                path.split_at(pos)
+            },
+            None => {
+                (path, "/")
+            }
+        };
+        (format!("/{}", service_path), String::from(api_path))
     }
 
     fn extract_request_id(_req: &Request<Body>) -> Uuid {

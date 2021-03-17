@@ -10,7 +10,7 @@ lazy_static::lazy_static! {
     static ref HTTP_COUNTER: prometheus::IntCounterVec = prometheus::register_int_counter_vec!(
         "gateway_requests_total",
         "Number of HTTP requests.",
-        &["service", "app", "upstream", "status", "path"]
+        &["service", "app", "upstream", "status_code", "path"]
     ).unwrap();
     static ref HTTP_REQ_DURATION_HIST: prometheus::HistogramVec = prometheus::register_histogram_vec!(
         "gateway_request_duration_seconds",
@@ -94,7 +94,7 @@ impl Middleware for LoggerMiddleware {
 
     fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
         let MwPostRequest {context, response, service_filters: _, client_filters: _, result} = task;
-        let status = response.status().to_string();
+        let status = response.status().as_u16().to_string();
         let start_time = context.args.get("TS").unwrap().parse::<f64>().unwrap();
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let upstream = {
@@ -104,7 +104,7 @@ impl Middleware for LoggerMiddleware {
                 ""
             }
         };
-        let path = "/";
+        let path = context.api_path.clone();
         HTTP_REQ_DURATION_HIST.with_label_values(&[
             &context.service_id, 
             &context.client_id, 
@@ -115,7 +115,7 @@ impl Middleware for LoggerMiddleware {
             &context.client_id, 
             upstream, 
             &status, 
-            path,
+            &path,
         ]).inc_by(1);
 
         let response = MwPostResponse {context: context, response: response };
