@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use regex::Regex;
 use serde::{Serialize, Deserialize};
 use base64;
+use serde_urlencoded;
 
 
 #[derive(Debug, Clone)]
@@ -130,6 +131,7 @@ impl AuthService {
                 match service.auth {
                     AuthSetting::AppKey(_) => {
                         if let Some(appkey) = Self::get_app_key(&head) {
+                            //println!("appkey: {}", appkey);
                             if let Some(app_id) = self.apps_key.get(&appkey) {
                                 if let Some(client) = self.apps.get(app_id) {
                                     if let Some((sla, sf, cf)) = Self::get_filters(client, service) {
@@ -234,20 +236,29 @@ impl AuthService {
             let token_str = token.to_str().unwrap();
             return Some(String::from(token_str));
         } 
+
         // find in url query
-        let url = url::Url::parse(&head.uri.to_string()).unwrap();
-        for (k, v) in url.query_pairs() {
-            if k.eq("_app_key") {
-                return Some(String::from(v));
+        if let Some(query) = head.uri.query() {
+            let query_pairs = serde_urlencoded::from_str::<Vec<(String, String)>>(query);
+            if let Ok(pairs) = query_pairs {
+                for (k, v) in pairs {
+                    if k.eq("_app_key") {
+                        return Some(v);
+                    }
+                }
+            } else {
+                println!("{:?}", query_pairs);
             }
         }
+
         // find in url path
-        let pattern = Regex::new(r"^\/.+?\/~(.+?)\/").unwrap();
-        if let Some(appkey_match) = pattern.captures(url.path()) {
+        let pattern = Regex::new(r"^/.+?/~(.+?)/").unwrap();
+        if let Some(appkey_match) = pattern.captures(head.uri.path()) {
             if let Some(am) = appkey_match.get(1) {
                 return Some(String::from(am.as_str()))
             }
         }
+
         None
     }
 
