@@ -1,11 +1,12 @@
-use futures::{Stream, StreamExt};
+use futures::{SinkExt, Stream, StreamExt};
 use serde::{Serialize, Deserialize};
 use tokio::sync::mpsc;
-use std::pin::Pin;
+use std::{pin::Pin, time::Duration};
 use std::task::{Context, Poll};
 use crate::config::{ClientInfo, ServiceInfo};
 use async_tungstenite::{tokio::connect_async, tungstenite::Message};
 use pin_project::pin_project;
+use rand::Rng;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -68,19 +69,35 @@ impl ConfigSource {
     }
 
     pub async fn watch_websocket(ws_url: String, sender: mpsc::Sender<ConfigUpdate>) {
-        let (mut ws, _) = connect_async(ws_url).await.expect("Failed to connect config source");
-        while let Some(res) = ws.next().await {
-            if let Ok(msg) = res {
-                match msg {
-                    Message::Text(txt) => {
-                        let update = serde_json::from_str::<ConfigUpdate>(&txt);
-                        if let Ok(up) = update {
-                            sender.send(up).await.unwrap();
+        loop {  // retry on disconnection
+            println!("connecting to websocket");
+            let result = connect_async(ws_url.clone()).await;
+            if let Ok((mut ws, _)) = result {
+                while let Some(res) = ws.next().await {
+                    if let Ok(msg) = res {
+                        match msg {
+                            Message::Text(txt) => {
+                                let update = serde_json::from_str::<ConfigUpdate>(&txt);
+                                if let Ok(up) = update {
+                                    sender.send(up).await.unwrap();
+                                } else {
+                                    println!("bad config update message: {:?}", update);
+                                }
+                            },
+                            Message::Ping(sn) => {
+                                let _ = ws.send(Message::Pong(sn)).await;
+                            },
+                            Message::Close(_) => {
+                                break;
+                            },
+                            _ => {},
                         }
-                    },
-                    _ => {},
+                    }
                 }
             }
+            let wait_time = rand::thread_rng().gen_range(1, 61);
+            println!("ws connection lost, sleep {}s to reconnect", &wait_time);
+            tokio::time::sleep(Duration::from_secs(wait_time)).await;
         }
     }
 }

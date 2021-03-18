@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 use crate::config::{ClientInfo, ConfigUpdate, FilterSetting, AuthSetting};
 use tokio::sync::{mpsc, broadcast, oneshot};
 use hyper::http::request::Parts;
@@ -123,7 +123,7 @@ impl AuthService {
     }
 
     pub async fn auth_handler(&mut self, task: AuthRequest) {
-        let (head, result_channel) = task.into_parts();
+        let (mut head, result_channel) = task.into_parts();
         let service_path = Self::extract_service_path(&head.uri.path());
         let mut error = String::from("");
         if let Some(service_id) = self.service_path.get(&service_path) {
@@ -144,6 +144,12 @@ impl AuthService {
                                             service_filters: sf,
                                             client_filters: cf,
                                         };
+                                        // replace appkey in url path
+                                        let url = head.uri.to_string();
+                                        let replaced = format!("/~{}/", appkey);
+                                        let url = url.replace(&replaced, "/");
+                                        head.uri = hyper::Uri::from_str(&url).unwrap();
+                                        
                                         let _ = result_channel.send((head, resp));
                                         return
                                     } else {
