@@ -23,8 +23,7 @@ mod tests {
     //         iat: None,
     //         iss: None,
     //     };
-    //     let sk = base64::decode_config(sign_key, base64::URL_SAFE).unwrap();
-    //     let priv_key = jwt::EncodingKey::from_ec_der(sk.as_slice());
+    //     let priv_key = jwt::EncodingKey::from_ec_pem(sign_key.as_bytes()).unwrap();
     //
     //     let header = jwt::Header::new(jwt::Algorithm::ES256);
     //     let token = jwt::encode(&header, &claims, &priv_key);
@@ -157,7 +156,7 @@ mod tests {
             assert!(!resp.success);
         }
 
-        // send request to /test1
+        // // send request to /test1
         // {
         //     let token = gen_jwt_token("leric/app", app_secret);
         //     let (tx, rx) = oneshot::channel();

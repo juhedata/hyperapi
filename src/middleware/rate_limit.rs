@@ -11,7 +11,8 @@ use crate::config::{ConfigUpdate, FilterSetting};
 pub struct RateLimitMiddleware {
     service_limit: HashMap<String, Vec<TokenBucket>>,  // service_limit[service_id] = Vec<TokenBucket>
     client_limit: HashMap<String, HashMap<String, Vec<TokenBucket>>>,   // client_limit[service_id][client_id] = Vec<TokenBucket>
-    sla: HashMap<String, HashMap<String, Vec<TokenBucket>>>,  // services[service_id][sla_id] = Vec<RateLimit>
+    sla: HashMap<String, HashMap<String, Vec<TokenBucket>>>,  // sla[service_id][sla_id] = Vec<RateLimit>
+    client_sla: HashMap<String, HashMap<String, String>>,   // client_sla[client_id][service_id] = sla:String
 }
 
 impl Default for RateLimitMiddleware {
@@ -20,6 +21,7 @@ impl Default for RateLimitMiddleware {
             service_limit: HashMap::new(), 
             client_limit: HashMap::new(), 
             sla: HashMap::new(),
+            client_sla: HashMap::new(),
         }
     }
 }
@@ -78,24 +80,31 @@ impl Middleware for RateLimitMiddleware {
     fn config_update(&mut self, update: ConfigUpdate) {
         match update {
             ConfigUpdate::ClientUpdate(client) => {
-                let mut client_limits: HashMap<String, Vec<TokenBucket>> = HashMap::new();
                 for (service_id, sla_name) in &client.services {
-                    if let Some(clients) = self.sla.get(service_id) {
-                        if let Some(settings) = clients.get(sla_name) {
-                            client_limits.insert(service_id.clone(), settings.clone());
+                    if let Some(sla_settings) = self.sla.get(service_id) {
+                        if let Some(buckets) = sla_settings.get(sla_name) {
+                            // replace buckets in client_limit[service_id][client_id]
+                            if let Some(clients) = self.client_limit.get_mut(service_id) {
+                                clients.insert(client.client_id.clone(), buckets.clone());
+                            } else {
+                                let mut client_limit = HashMap::new();
+                                client_limit.insert(client.client_id.clone(), buckets.clone());
+                                self.client_limit.insert(service_id.clone(), client_limit);
+                            }
                         }
                     }
                 }
-                self.client_limit.insert(client.client_id.clone(), client_limits);
+                self.client_sla.insert(client.client_id.clone(), client.services.clone());
             },
             ConfigUpdate::ClientRemove(client_id) => {
-                for (_, clients) in self.client_limit.iter_mut() {
+                for (_service_id, clients) in self.client_limit.iter_mut() {
                     clients.remove(&client_id);
                 }
+                self.client_sla.remove(&client_id);
             },
             ConfigUpdate::ServiceUpdate(service) => {
+                // setup service limit
                 let mut service_limits: Vec<TokenBucket> = Vec::new();
-
                 for filter in &service.filters {
                     if let FilterSetting::RateLimit(f) = filter {
                         service_limits.push(TokenBucket::new(f));
@@ -103,6 +112,7 @@ impl Middleware for RateLimitMiddleware {
                 }
                 self.service_limit.insert(service.service_id.clone(), service_limits);
 
+                // setup sla limit for client update lookup
                 let mut service_sla: HashMap<String, Vec<TokenBucket>> = HashMap::new();
                 for sla in &service.sla {
                     for filter in &sla.filters {
@@ -115,6 +125,18 @@ impl Middleware for RateLimitMiddleware {
                         }
                     }
                 }
+
+                // update client_limit
+                for (client_id, sla_names) in self.client_sla.iter() {
+                    if let Some(sla) = sla_names.get(&service.service_id) {
+                        if let Some(buckets) = service_sla.get(sla) {
+                            if let Some(client_limits) = self.client_limit.get_mut(&service.service_id) {
+                                client_limits.insert(client_id.clone(), buckets.clone());
+                            }
+                        }
+                    }
+                }
+
                 self.sla.insert(service.service_id.clone(), service_sla);
             },
             ConfigUpdate::ServiceRemove(service_id) => {
@@ -128,7 +150,6 @@ impl Middleware for RateLimitMiddleware {
 }
 
 
-
 #[derive(Debug, Clone)]
 pub struct TokenBucket {
     pub interval: Duration,
@@ -137,7 +158,6 @@ pub struct TokenBucket {
     refresh_at: Instant,
     tokens: u64,
 }
-
 
 impl TokenBucket {
 
@@ -155,7 +175,7 @@ impl TokenBucket {
         let request = 1;
         let delta = now.duration_since(self.refresh_at).as_secs() / self.interval.as_secs();
         let token_count = std::cmp::min(self.capacity, self.tokens + delta * self.limit);
-        if token_count > request {
+        if token_count >= request {
             self.tokens = token_count - request;
             if delta > 0 {
                 self.refresh_at = now;
