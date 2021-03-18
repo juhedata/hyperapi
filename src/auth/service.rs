@@ -6,7 +6,6 @@ use jsonwebtoken as jwt;
 use std::time::SystemTime;
 use regex::Regex;
 use serde::{Serialize, Deserialize};
-use base64;
 use serde_urlencoded;
 
 
@@ -168,7 +167,7 @@ impl AuthService {
                     AuthSetting::JWT(_) => {
                         if let Some(app_id) =  Self::get_jwt_app_id(&head, None) {
                             if let Some(client) = self.apps.get(&app_id) {
-                                if let Some(_) =  Self::get_jwt_app_id(&head, Some(client.app_key.clone())) {
+                                if let Some(_) =  Self::get_jwt_app_id(&head, Some(client.pub_key.clone())) {
                                     if let Some((sla, sf,  cf)) = Self::get_filters(client, service) {
                                         let resp = AuthResponse {
                                             success: true,
@@ -268,17 +267,20 @@ impl AuthService {
         None
     }
 
-    fn get_jwt_app_id(head: &Parts, appkey: Option<String>) -> Option<String> {
+    fn get_jwt_app_id(head: &Parts, pubkey: Option<String>) -> Option<String> {
         let ts = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
         if let Some(token) = head.headers.get(hyper::header::AUTHORIZATION) {  // find in authorization header
             let segs: Vec<&str> = token.to_str().unwrap().split(' ').collect();
             let token = *(segs.get(1).unwrap_or(&""));
             let t = {
-                if let Some(key) = appkey {
+                if let Some(key) = pubkey {
                     let verifier = jwt::Validation::new(jwt::Algorithm::ES256);
-                    let pubkey = base64::decode_config(key, base64::URL_SAFE).unwrap();
-                    let verify_key = jwt::DecodingKey::from_ec_der(pubkey.as_slice());
-                    jwt::decode::<JwtClaims>(&token, &verify_key, &verifier)
+                    let verify_key = jwt::DecodingKey::from_ec_pem(key.as_bytes());
+                    if let Ok(vk) = verify_key {
+                        jwt::decode::<JwtClaims>(&token, &vk, &verifier)
+                    } else {
+                        Err(jwt::errors::ErrorKind::InvalidEcdsaKey.into())
+                    }
                 } else {
                     jwt::dangerous_insecure_decode::<JwtClaims>(token)
                 }
@@ -287,6 +289,8 @@ impl AuthService {
                 if td.claims.exp > ts.as_secs() {
                     return Some(td.claims.sub);
                 }
+            } else {
+                println!("{:?}", t);
             }
         }
         None

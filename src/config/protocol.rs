@@ -14,6 +14,7 @@ pub struct GatewayConfig {
 pub struct ClientInfo {
     pub client_id: String,
     pub app_key: String,
+    pub pub_key: String,
     pub ip_whitelist: Vec<String>,
     pub services: HashMap<String, String>,
 }
