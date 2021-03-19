@@ -167,7 +167,7 @@ impl AuthService {
                     AuthSetting::JWT(_) => {
                         if let Some(app_id) =  Self::get_jwt_app_id(&head, None) {
                             if let Some(client) = self.apps.get(&app_id) {
-                                if let Some(_) =  Self::get_jwt_app_id(&head, Some(client.pub_key.clone())) {
+                                if let Some(_app_id) =  Self::get_jwt_app_id(&head, Some(client.pub_key.clone())) {
                                     if let Some((sla, sf,  cf)) = Self::get_filters(client, service) {
                                         let resp = AuthResponse {
                                             success: true,

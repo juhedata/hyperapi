@@ -59,7 +59,7 @@ impl UpstreamMiddleware {
 
         while let Some(MwPreRequest {context, request, service_filters: _, client_filters: _, result }) = rx.recv().await {
             event!(Level::DEBUG, "request {:?}", request.uri());
-            if let Ok(px) = service.ready_and().await {
+            if let Ok(px) = service.ready().await {
                 let f = px.call(request);
                 tokio::spawn(async move {
                     let proxy_resp: Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>>  = f.await;
