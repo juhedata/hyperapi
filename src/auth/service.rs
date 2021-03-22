@@ -133,26 +133,31 @@ impl AuthService {
                             //println!("appkey: {}", appkey);
                             if let Some(app_id) = self.apps_key.get(&appkey) {
                                 if let Some(client) = self.apps.get(app_id) {
-                                    if let Some((sla, sf, cf)) = Self::get_filters(client, service) {
-                                        let resp = AuthResponse {
-                                            success: true,
-                                            error: error,
-                                            client_id: client.client_id.clone(),
-                                            service_id: service_id.clone(),
-                                            sla: sla,
-                                            service_filters: sf,
-                                            client_filters: cf,
-                                        };
-                                        // replace appkey in url path
-                                        let url = head.uri.to_string();
-                                        let replaced = format!("/~{}/", appkey);
-                                        let url = url.replace(&replaced, "/");
-                                        head.uri = hyper::Uri::from_str(&url).unwrap();
-                                        
-                                        let _ = result_channel.send((head, resp));
-                                        return
+                                    if client.app_key == appkey {  // appkey might be updated
+                                        if let Some((sla, sf, cf)) = Self::get_filters(client, service) {
+                                            let resp = AuthResponse {
+                                                success: true,
+                                                error: error,
+                                                client_id: client.client_id.clone(),
+                                                service_id: service_id.clone(),
+                                                sla: sla,
+                                                service_filters: sf,
+                                                client_filters: cf,
+                                            };
+                                            // replace appkey in url path
+                                            let url = head.uri.to_string();
+                                            let replaced = format!("/~{}/", appkey);
+                                            let url = url.replace(&replaced, "/");
+                                            head.uri = hyper::Uri::from_str(&url).unwrap();
+                                            
+                                            let _ = result_channel.send((head, resp));
+                                            return
+                                        } else {
+                                            error = "No available SLA assigned".into();
+                                        }
                                     } else {
-                                        error = "No available SLA assigned".into();
+                                        self.apps_key.remove(&appkey);
+                                        error = "Invalid app-key".into();
                                     }
                                 } else {
                                     error = "Invalid app-id".into();

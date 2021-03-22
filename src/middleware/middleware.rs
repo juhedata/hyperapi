@@ -12,6 +12,7 @@ pub struct MiddlewareHandle {
     pub name: String,
     pub pre: bool,
     pub post: bool, 
+    pub require_setting: bool,
     pub chan: mpsc::Sender<MiddlewareRequest>,
 }
 
@@ -66,6 +67,10 @@ pub trait Middleware {
     }
 
     fn post() -> bool {
+        true
+    }
+
+    fn require_setting() -> bool {
         true
     }
 
@@ -208,7 +213,7 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
         });
     }
 
-    let MiddlewareHandle {name, chan, pre, post} = mw_stack.pop().unwrap();
+    let MiddlewareHandle {name, chan, pre, post, require_setting} = mw_stack.pop().unwrap();
     let service_filters = {
         if let Some(sfs) = context.service_filters.get(&name) {
             sfs.clone()
@@ -224,9 +229,14 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
         }
     };
 
+    if require_setting && service_filters.len() == 0 && client_filters.len() == 0 {
+        return Box::pin(async move {
+            middleware_chain(req, context, mw_stack).await
+        });
+    }
+
     let resp_service_filters = service_filters.clone();
     let resp_client_filters = client_filters.clone();
-
     let fut = async move {
         // request middleware pre-filter
         let MwPreResponse{context, request, response} = {

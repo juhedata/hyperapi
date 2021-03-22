@@ -17,6 +17,7 @@ macro_rules! start_middleware_macro {
             name: <$t>::name(),
             pre: <$t>::pre(),
             post: <$t>::post(),
+            require_setting: <$t>::require_setting(),
             chan: tx,
         });
     };

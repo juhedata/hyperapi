@@ -96,6 +96,10 @@ impl Middleware for UpstreamMiddleware {
         false
     }
 
+    fn require_setting() -> bool {
+        false
+    }
+
     fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
         if let Some(ch) = self.worker_queues.get_mut(&task.context.service_id) {
             let task_ch = ch.clone();

@@ -68,6 +68,10 @@ impl Middleware for LoggerMiddleware {
         "Logger".into()
     }
 
+    fn require_setting() -> bool {
+        false
+    }
+
     fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
         let MwPreRequest {mut context, request, service_filters: _, client_filters: _, result} = task;
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
