@@ -16,6 +16,8 @@ serde_yaml = "0.8"
 serde_urlencoded = "0.7"
 tower = { version = "0.4", features=["limit", "balance", "timeout", "load", "load-shed", "discover", "util"] }
 hyper-rustls = "0.22"
+tokio-rustls = "0.22"
+rustls = "0.19"
 
 async-tungstenite = { version = "0.13", features=["tokio-rustls"] }
 url = "2"
@@ -35,5 +37,4 @@ tracing-log = "0.1"
 tracing-bunyan-formatter = "0.1"
 tracing-appender ="0.1"
 uuid = { version="0.8", features=["v4"] }
-
-
+etcd-client = "0.6"

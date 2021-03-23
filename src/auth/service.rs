@@ -78,8 +78,6 @@ impl AuthService {
                 auth_request = self.auth_receiver.recv() => {
                     if let Some(req) = auth_request {
                         self.auth_handler(req).await;
-                    } else {
-                        println!("failed to receive auth request")
                     }
                 },
             }

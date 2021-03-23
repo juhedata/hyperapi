@@ -1,5 +1,4 @@
 use tokio::sync::{mpsc, broadcast};
-use std::net::SocketAddr;
 use tracing::{event, Level};
 use crate::middleware::{MiddlewareHandle, Middleware, HeaderMiddleware, RateLimitMiddleware, 
     UpstreamMiddleware, LoggerMiddleware, ACLMiddleware};
@@ -69,7 +68,7 @@ impl GatewayServer {
     }
 
 
-    pub fn make_service(&self, _addr: SocketAddr) -> RequestHandler {
+    pub fn make_service(&self) -> RequestHandler {
         let lock = self.status.clone();
         let ready = {
             lock.lock().unwrap().clone()
