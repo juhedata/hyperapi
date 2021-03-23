@@ -1,4 +1,4 @@
-use hyper::{Body, Request, Response, Uri, header::HeaderValue};
+use hyper::{Body, Request, Response, Uri, header::HeaderValue, StatusCode};
 use hyper::client::HttpConnector;
 use hyper::client::Client;
 use hyper_rustls::HttpsConnector;
@@ -47,7 +47,7 @@ impl ProxyHandler {
 
     fn alter_request(req: Request<Body>, endpoint: &str) -> Request<Body> {
         let (mut parts, body) = req.into_parts();
-
+        parts.version = hyper::http::Version::HTTP_11;
         let path_and_query = parts.uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
         let path = path_and_query.strip_prefix("/").unwrap_or("/");
         let path_left = if let Some(offset) = path.find("/") {
@@ -86,15 +86,23 @@ impl Service<Request<Body>> for ProxyHandler
             &upstream_id,
         ]).inc();
         Box::pin(async move {
-            let mut resp = f.await.unwrap();
-            HTTP_REQ_INPROGRESS.with_label_values(&[
-                &service_id, 
-                &upstream_id,
-            ]).dec();
-            let header = resp.headers_mut();
-            let header_value = HeaderValue::from_str(&upstream_id).unwrap();
-            header.append("X-UPSTREAM-ID", header_value);
-            Ok(resp)
+            let result = f.await;
+            if let Ok(mut resp) = result {
+                HTTP_REQ_INPROGRESS.with_label_values(&[
+                    &service_id,
+                    &upstream_id,
+                ]).dec();
+                let header = resp.headers_mut();
+                let header_value = HeaderValue::from_str(&upstream_id).unwrap();
+                header.append("X-UPSTREAM-ID", header_value);
+                Ok(resp)
+            } else {
+                let err = Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .body(Body::from(format!("Error request upstream: {:?}", result)))
+                    .unwrap();
+                Ok(err)
+            }
         })
     }
 }

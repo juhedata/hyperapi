@@ -36,7 +36,7 @@ impl Middleware for HeaderMiddleware {
             }
         }
         let resp = MwPreResponse {context: context, request: Some(request), response: None };
-        result.send(resp).unwrap();
+        let _ = result.send(resp);
         Box::pin(async {})
     }
 
@@ -54,7 +54,7 @@ impl Middleware for HeaderMiddleware {
             }
         }
         let resp = MwPostResponse {context: context, response: response };
-        result.send(resp).unwrap();
+        let _ = result.send(resp);
         Box::pin(async {})
     }
 
@@ -68,12 +68,16 @@ fn apply_header_filter<'a>(header: &'a mut HeaderMap, filter: &HeaderSetting, op
         return header;
     }
     for k in filter.removal.iter() {
-        let kn = HeaderName::from_lowercase(k.as_bytes()).unwrap();
-        header.remove(kn);
+        if let Ok(kn) = HeaderName::from_lowercase(k.to_lowercase().as_bytes()) {
+            header.remove(kn);
+        }
     }
     for (k, v) in filter.injection.iter() {
-        let kn = HeaderName::from_lowercase(k.as_bytes()).unwrap();
-        header.insert(kn, HeaderValue::from_str(v).unwrap());
+        if let Ok(kn) = HeaderName::from_lowercase(k.to_lowercase().as_bytes()) {
+            if let Ok(kv) = HeaderValue::from_str(v) {
+                header.insert(kn, kv);
+            }
+        }
     }
     header
 }

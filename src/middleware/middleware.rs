@@ -133,7 +133,7 @@ impl RequestContext {
     }
 
     fn extract_path(path: &str) -> (String, String) {
-        let path = path.strip_prefix("/").unwrap();
+        let path = path.strip_prefix("/").unwrap_or(path);
         let (service_path, api_path) = match path.find("/") {
             Some(pos) => {
                 path.split_at(pos)
@@ -202,8 +202,8 @@ where MW: Middleware + Default
 pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stack: Vec<MiddlewareHandle>)
         -> Pin<Box<dyn Future<Output=Response<Body>> + Send>> 
 {
-    let depth = mw_stack.len();
-    if depth == 0 {
+    let mw = mw_stack.pop();
+    if mw.is_none() {
         return Box::pin(async{
             let resp = Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -212,8 +212,7 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
             resp
         });
     }
-
-    let MiddlewareHandle {name, chan, pre, post, require_setting} = mw_stack.pop().unwrap();
+    let MiddlewareHandle {name, chan, pre, post, require_setting} = mw.unwrap();
     let service_filters = {
         if let Some(sfs) = context.service_filters.get(&name) {
             sfs.clone()

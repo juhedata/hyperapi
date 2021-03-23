@@ -226,7 +226,7 @@ impl AuthService {
     }
 
     fn extract_service_path(path: &str) -> String {
-        let path = path.strip_prefix("/").unwrap();
+        let path = path.strip_prefix("/").unwrap_or(path);
         let (service_path, _path) = match path.find("/") {
             Some(pos) => {
                 path.split_at(pos)
@@ -241,9 +241,10 @@ impl AuthService {
     fn get_app_key(head: &Parts) -> Option<String> {
         // find in authorization header
         if let Some(token) = head.headers.get("X-APP-KEY") {  
-            let token_str = token.to_str().unwrap();
-            return Some(String::from(token_str));
-        } 
+            if let Ok(token_str) = token.to_str() {
+                return Some(String::from(token_str));
+            }
+        }
 
         // find in url query
         if let Some(query) = head.uri.query() {

@@ -104,7 +104,7 @@ impl Middleware for UpstreamMiddleware {
         if let Some(ch) = self.worker_queues.get_mut(&task.context.service_id) {
             let task_ch = ch.clone();
             Box::pin(async move {
-                task_ch.send(task).await.unwrap();
+                let _ = task_ch.send(task).await;
             })
         } else {
             Box::pin(async {
@@ -117,7 +117,7 @@ impl Middleware for UpstreamMiddleware {
                     request: Some(task.request), 
                     response: Some(err),
                  };
-                task.result.send(resp).unwrap();
+                let _ = task.result.send(resp);
             })
         }
     }

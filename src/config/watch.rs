@@ -58,14 +58,14 @@ impl ConfigSource {
         let content = tokio::fs::read_to_string(config_file).await.expect("Failed to read config file");
         let config = serde_yaml::from_str::<ServiceConfig>(&content).expect("Failed to parse config file");
         for s in config.services.iter() {
-            sender.send(ConfigUpdate::ServiceUpdate(s.clone())).await.unwrap();
+            let _ = sender.send(ConfigUpdate::ServiceUpdate(s.clone())).await;
         }
 
         for c in config.clients.iter() {
-            sender.send(ConfigUpdate::ClientUpdate(c.clone())).await.unwrap();
+            let _ = sender.send(ConfigUpdate::ClientUpdate(c.clone())).await;
         }
-        
-        sender.send(ConfigUpdate::ConfigReady(true)).await.unwrap();
+
+        let _ = sender.send(ConfigUpdate::ConfigReady(true)).await;
     }
 
     pub async fn watch_websocket(ws_url: String, sender: mpsc::Sender<ConfigUpdate>) {
@@ -79,7 +79,7 @@ impl ConfigSource {
                             Message::Text(txt) => {
                                 let update = serde_json::from_str::<ConfigUpdate>(&txt);
                                 if let Ok(up) = update {
-                                    sender.send(up).await.unwrap();
+                                    let _ = sender.send(up).await;
                                 } else {
                                     println!("bad config update message: {:?}", update);
                                 }

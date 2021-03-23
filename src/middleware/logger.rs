@@ -46,9 +46,8 @@ impl LoggerMiddleware {
         response
     }
 
-
     fn extract_service_path(path: &str) -> String {
-        let path = path.strip_prefix("/").unwrap();
+        let path = path.strip_prefix("/").unwrap_or(path);
         let (service_path, _path) = match path.find("/") {
             Some(pos) => {
                 path.split_at(pos)
@@ -83,7 +82,7 @@ impl Middleware for LoggerMiddleware {
             if listen_path.eq("/metrics") {
                 let resp = Self::prometheus_endpoint(&request);
                 let response = MwPreResponse {context: context, request: Some(request), response: Some(resp) };
-                result.send(response).unwrap();
+                let _ = result.send(response);
             } else {
                 let error = {
                     if let Some(e) = context.args.get("ERROR") {
@@ -92,14 +91,16 @@ impl Middleware for LoggerMiddleware {
                         String::from("Authentication Error")
                     }
                 };
-                let resp = Response::builder().status(403).body(error.into()).unwrap();
+                let resp = Response::builder().status(403)
+                        .body(error.into())
+                        .unwrap();
                 let response = MwPreResponse {context: context, request: Some(request), response: Some(resp) };
-                result.send(response).unwrap();
+                let _ = result.send(response);
             }
             Box::pin(async {})
         } else {
             let response = MwPreResponse {context: context, request: Some(request), response: None };
-            result.send(response).unwrap();
+            let _ = result.send(response);
             Box::pin(async {})
         }
     }
@@ -107,21 +108,24 @@ impl Middleware for LoggerMiddleware {
     fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
         let MwPostRequest {context, response, service_filters: _, client_filters: _, result} = task;
         let status = response.status().as_u16().to_string();
-        let start_time = context.args.get("TS").unwrap().parse::<f64>().unwrap();
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let upstream = {
             if let Some(us) = response.headers().get("X-UPSTREAM-ID") {
-                us.to_str().unwrap()
+                us.to_str().unwrap_or("")
             } else {
                 ""
             }
         };
+
+        if let Ok(start_time) = context.args.get("TS").unwrap().parse::<f64>() {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+            HTTP_REQ_DURATION_HIST.with_label_values(&[
+                &context.service_id,
+                &context.client_id,
+                upstream,
+            ]).observe(now.as_secs_f64() - start_time);
+        }
+
         let path = context.api_path.clone();
-        HTTP_REQ_DURATION_HIST.with_label_values(&[
-            &context.service_id, 
-            &context.client_id, 
-            upstream,
-        ]).observe(now.as_secs_f64() - start_time);
         HTTP_COUNTER.with_label_values(&[
             &context.service_id, 
             &context.client_id, 
@@ -131,7 +135,7 @@ impl Middleware for LoggerMiddleware {
         ]).inc_by(1);
 
         let response = MwPostResponse {context: context, response: response };
-        result.send(response).unwrap();
+        let _ = result.send(response);
         Box::pin(async {})
     }
 

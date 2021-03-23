@@ -110,19 +110,23 @@ impl ACLMatcher {
             for m in msplit {
                 methodset.insert(String::from(m));
             }
-            let regex = Regex::from_str(&p.path_regex).unwrap();
-            paths.push((regex, methodset));
+            if let Ok(regex) = Regex::from_str(&p.path_regex) {
+                paths.push((regex, methodset));
+            } else {
+                println!("bad regex {}", p.path_regex);
+            }
         }
         ACLMatcher { on_match, paths }
     }
 
     pub fn check(&self, req: &Request<Body>) -> bool {
         let method = req.method().as_str();
-        let path = req.uri().path().strip_prefix("/").unwrap();
+        let path = req.uri().path();
+        let path = path.strip_prefix("/").unwrap_or(path);
 
         for (path_regex, methodset) in &self.paths {
             if methodset.contains(method) {
-                let (_sid, path_left) = path.split_at(path.find("/").unwrap());
+                let (_sid, path_left) = path.split_at(path.find("/").unwrap_or(0));
                 if path_regex.is_match(path_left) {
                     return self.on_match
                 }
