@@ -38,6 +38,7 @@ pub struct ServiceInfo {
     pub protocol: String,
     pub auth: AuthSetting,
     pub upstreams: Vec<Upstream>,
+    pub load_balance: String,
     pub timeout: u64,
     pub filters: Vec<FilterSetting>,
     pub sla: Vec<ServiceLevel>,

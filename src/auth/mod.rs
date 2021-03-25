@@ -77,6 +77,7 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             protocol: String::from("http"),
             auth: AuthSetting::AppKey(AppKeyAuth {}),
             timeout: 3000,
+            load_balance: String::from("conn"),
             upstreams: vec![
                 Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into() }
             ],
@@ -106,6 +107,7 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             path: String::from("/test1"),
             protocol: String::from("http"),
             auth: AuthSetting::JWT(JwtAuth {}),
+            load_balance: String::from("load"),
             timeout: 3000,
             upstreams: vec![
                 Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into() }

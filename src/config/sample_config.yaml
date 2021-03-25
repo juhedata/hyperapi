@@ -5,6 +5,7 @@ services:
     auth:
       type: AppKey
     timeout: 10
+    load_balance: "hash"
     upstreams:
       - { id: 12, timeout: 10, target: "http://127.0.0.1:8000/" }
     filters:
