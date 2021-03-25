@@ -94,5 +94,4 @@ async fn main() {
             .serve(make_svc);
         server.await.expect("Server failed to start");
     }
-   
 }

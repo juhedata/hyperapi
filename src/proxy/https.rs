@@ -384,30 +384,3 @@ impl Accept for TlsAcceptor {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn file_cert_key() {
-        TlsConfigBuilder::new()
-            .key_path("examples/tls/key.rsa")
-            .cert_path("examples/tls/cert.pem")
-            .build()
-            .unwrap();
-    }
-
-    #[test]
-    fn bytes_cert_key() {
-        let key = include_str!("../examples/tls/key.rsa");
-        let cert = include_str!("../examples/tls/cert.pem");
-
-        TlsConfigBuilder::new()
-            .key(key.as_bytes())
-            .cert(cert.as_bytes())
-            .build()
-            .unwrap();
-    }
-}
-

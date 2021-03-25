@@ -4,6 +4,17 @@ use serde::{Serialize, Deserialize};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag="type", content="data")]
+pub enum ConfigUpdate {
+    ServiceUpdate(ServiceInfo),
+    ServiceRemove(String),
+    ClientUpdate(ClientInfo),
+    ClientRemove(String),
+    ConfigReady(bool),
+}
+
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GatewayConfig {
     pub apps: Vec<ClientInfo>,
     pub services: Vec<ServiceInfo>,
