@@ -5,6 +5,8 @@ mod rate_limit;
 mod header;
 mod acl;
 mod logger;
+//mod circuit_breaker;
+
 
 pub use middleware::{Middleware, MiddlewareRequest, MiddlewareHandle, RequestContext, 
     MwPreRequest, MwPreResponse, MwPostRequest, MwPostResponse,
