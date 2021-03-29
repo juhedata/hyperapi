@@ -5,7 +5,7 @@ mod rate_limit;
 mod header;
 mod acl;
 mod logger;
-//mod circuit_breaker;
+mod circuit_breaker;
 
 
 pub use middleware::{Middleware, MiddlewareRequest, MiddlewareHandle, RequestContext, 
@@ -18,5 +18,6 @@ pub use header::HeaderMiddleware;
 pub use acl::ACLMiddleware;
 pub use logger::LoggerMiddleware;
 
+pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerService};
 
 

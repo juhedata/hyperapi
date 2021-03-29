@@ -1,6 +1,7 @@
 use std::time::{SystemTime, Duration};
 
 
+#[derive(Debug, Clone)]
 pub struct CircuitBreakerConfig {
     pub error_threshold: u64,
     pub error_reset: Duration,

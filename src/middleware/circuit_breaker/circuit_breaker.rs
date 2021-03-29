@@ -46,37 +46,40 @@ impl<S> Service<Request<Body>> for CircuitBreakerService<S>
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let f = self.inner.call(req);
+        let fut = self.inner.call(req);
         let state = self.state.clone();
-        CBFuture {f, state}
+        CBFuture { fut, state, config: self.config.clone() }
     }
 }
 
 
-
 #[pin_project]
-pub struct CBFuture<Fut> {
+pub struct CBFuture<Fut> 
+    where Fut: Future<Output=Result<Response<Body>, hyper::Error>>
+{
     #[pin]
-    f: Fut,
+    fut: Fut,
     state: Arc<Mutex<CircuitBreakerState>>,
+    config: CircuitBreakerConfig,
 }
 
 
 impl<Fut> Future for CBFuture<Fut> 
-    where Fut: Future
+    where Fut: Future<Output=Result<Response<Body>, hyper::Error>>
 {
     type Output = Fut::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let result = ready!(this.f.poll(cx));
+        let result = ready!(this.fut.poll(cx));
         if let Ok(r) = result {
-            let state = self.state.lock().unwrap();
-            state.success(self.config);
+            let mut state = this.state.lock().unwrap();
+            state.success(&this.config);
+            Poll::Ready(Ok(r))
         } else {
-            let state = self.state.lock().unwrap();
-            state.error(self.config);
+            let mut state = this.state.lock().unwrap();
+            state.error(&this.config);
+            Poll::Ready(result)
         }
-        Poll::Ready(result)
     }
 }

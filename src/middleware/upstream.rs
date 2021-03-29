@@ -19,6 +19,7 @@ use crate::config::{ConfigUpdate, ServiceInfo};
 use crate::middleware::{Middleware, MwPreRequest, MwPreResponse, MwPostRequest};
 use crate::middleware::proxy::ProxyHandler;
 use tracing::{event, Level};
+use crate::middleware::{CircuitBreakerConfig, CircuitBreakerService};
 
 
 #[derive(Debug)]
@@ -39,17 +40,26 @@ impl UpstreamMiddleware {
     async fn service_worker(mut rx: mpsc::Receiver<MwPreRequest>, conf: ServiceInfo) {
         let timeout = Duration::from_millis(conf.timeout);
         let max_conn = 1000;
+        let cb_config = CircuitBreakerConfig {
+            error_threshold: 10,
+            error_reset: Duration::from_secs(60),
+            retry_delay: Duration::from_secs(10),
+        };
         let mut service = match conf.upstreams.len() {
             1 => {
                 let u = conf.upstreams.get(0).unwrap();
-                let proxy = Timeout::new(ProxyHandler::new(&conf.service_id, u), timeout);
+                let us = ProxyHandler::new(&conf.service_id, u);
+                let cb = CircuitBreakerService::new(us, cb_config);
+                let proxy = Timeout::new(cb, timeout);
                 let limit = ConcurrencyLimit::new(proxy, max_conn);
                 let service = LoadShed::new(limit);
                 BoxService::new(service)
             },
             _ => {
-                let list: Vec<Timeout<ProxyHandler>> = conf.upstreams.iter().map(|u| {
-                    Timeout::new(ProxyHandler::new(&conf.service_id, u), timeout)
+                let list: Vec<Timeout<CircuitBreakerService<ProxyHandler>>> = conf.upstreams.iter().map(|u| {
+                    let us = ProxyHandler::new(&conf.service_id, u);
+                    let cb = CircuitBreakerService::new(us, cb_config.clone());
+                    Timeout::new(cb, timeout)
                 }).collect();
                 if conf.load_balance.eq("hash") {
                     // todo: hash based load-balance
