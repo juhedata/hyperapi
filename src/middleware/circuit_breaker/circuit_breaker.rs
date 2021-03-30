@@ -71,11 +71,17 @@ impl<Fut> Future for CBFuture<Fut>
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let result = ready!(this.fut.poll(cx));
+        let result: Result<Response<Body>, hyper::Error> = ready!(this.fut.poll(cx));
         if let Ok(r) = result {
-            let mut state = this.state.lock().unwrap();
-            state.success(&this.config);
-            Poll::Ready(Ok(r))
+            if r.status().as_u16() >= 500 {
+                let mut state = this.state.lock().unwrap();
+                state.error(&this.config);
+                Poll::Ready(Ok(r))
+            } else {
+                let mut state = this.state.lock().unwrap();
+                state.success(&this.config);
+                Poll::Ready(Ok(r))
+            }
         } else {
             let mut state = this.state.lock().unwrap();
             state.error(&this.config);

@@ -38,12 +38,12 @@ impl Default for UpstreamMiddleware {
 impl UpstreamMiddleware {
 
     async fn service_worker(mut rx: mpsc::Receiver<MwPreRequest>, conf: ServiceInfo) {
-        let timeout = Duration::from_millis(conf.timeout);
+        let timeout = Duration::from_secs(conf.timeout);
         let max_conn = 1000;
         let cb_config = CircuitBreakerConfig {
-            error_threshold: 10,
+            error_threshold: 10,    
             error_reset: Duration::from_secs(60),
-            retry_delay: Duration::from_secs(10),
+            retry_delay: Duration::from_secs(60),
         };
         let mut service = match conf.upstreams.len() {
             1 => {
@@ -99,9 +99,9 @@ impl UpstreamMiddleware {
             },
         };
 
-        while let Some(MwPreRequest {context, mut request, service_filters: _, client_filters: _, result }) = rx.recv().await {
+        while let Some(MwPreRequest {context, mut request, result, .. }) = rx.recv().await {
             event!(Level::DEBUG, "request {:?}", request.uri());
-            let header_key = HeaderName::from_static("X-CLIENT-ID");
+            let header_key = HeaderName::from_static("x-client-id");
             let header_val = HeaderValue::from_str(&context.client_id).unwrap();
             let header = request.headers_mut();
             header.insert(header_key, header_val);
@@ -126,6 +126,13 @@ impl UpstreamMiddleware {
                         },
                     }
                 });
+            } else {
+                let err = Response::builder()
+                                .status(StatusCode::BAD_GATEWAY)
+                                .body(Body::from("Service not ready"))
+                                .unwrap();
+                let response = MwPreResponse { context, request: None, response: Some(err) };
+                let _ = result.send(response);
             }
         }
     }

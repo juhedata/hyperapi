@@ -241,6 +241,7 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
         let MwPreResponse{context, request, response} = {
             if pre {
                 let (tx, rx) = oneshot::channel();
+                let context2 = context.clone();
                 let pre_req = MwPreRequest {
                     context,
                     request: req,
@@ -249,7 +250,13 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
                     result: tx,
                 };
                 let _ = chan.send(MiddlewareRequest::Request(pre_req)).await;
-                rx.await.unwrap()
+                if let Ok(result) = rx.await {
+                    result
+                } else {
+                    let msg = format!("Middleware {} not responding", name);
+                    let error = Response::builder().status(500).body(msg.into()).unwrap();
+                    MwPreResponse { context: context2, request: None, response: Some(error) }
+                }
             } else {
                 MwPreResponse { context, request: Some(req), response: None }
             }
