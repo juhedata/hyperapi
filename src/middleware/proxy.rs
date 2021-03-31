@@ -78,20 +78,21 @@ impl Service<Request<Body>> for ProxyHandler
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let req = ProxyHandler::alter_request(req, &self.upstream);
         event!(Level::DEBUG, "{:?}", req.uri());
-        let f = self.client.request(req);
         let upstream_id = self.upstream_id.to_string();
         let service_id = self.service_id.clone();
         HTTP_REQ_INPROGRESS.with_label_values(&[
             &service_id, 
             &upstream_id,
         ]).inc();
+        
+        let f = self.client.request(req);
         Box::pin(async move {
             let result = f.await;
+            HTTP_REQ_INPROGRESS.with_label_values(&[
+                &service_id,
+                &upstream_id,
+            ]).dec();
             if let Ok(mut resp) = result {
-                HTTP_REQ_INPROGRESS.with_label_values(&[
-                    &service_id,
-                    &upstream_id,
-                ]).dec();
                 let header = resp.headers_mut();
                 let header_value = HeaderValue::from_str(&upstream_id).unwrap();
                 header.append("X-UPSTREAM-ID", header_value);
