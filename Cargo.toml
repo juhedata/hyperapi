@@ -18,6 +18,7 @@ tower = { version = "0.4", features=["limit", "balance", "timeout", "load", "loa
 hyper-rustls = "0.22"
 tokio-rustls = "0.22"
 rustls = "0.19"
+rustls-native-certs = "0.5"
 
 async-tungstenite = { version = "0.13", features=["tokio-rustls"] }
 url = "2"

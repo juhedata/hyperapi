@@ -1,33 +1,69 @@
 services:
-  - service_id: leric/account_service
-    path: /account
+  - service_id: test/mws
+    path: /mws
     protocol: http
     auth:
       type: AppKey
     timeout: 3
-    load_balance: "hash"
-    circurt_breaker:
-      error_threshold: 10
-      error_reset: 60
-      retry_interval: 10
+    load_balance: "load"
+    error_threshold: 10
+    error_reset: 60
+    retry_delay: 10
     upstreams:
-      - id: 12
+      - id: 1
         timeout: 3
         target: "http://127.0.0.1:9999/"
+        max_conn: 100
     filters:
       - type: Header
         setting:
           operate_on: "request"
           injection:
-            - ['X-Authentication', "source-authenticate-token"]
+            - ['X-TEST', "test-header"]
           removal:
-            - "Authentication"
+            - "Authorization"
+      - type: Header
+        setting:
+          operate_on: "response"
+          injection:
+            - ['POWERED-BY', "hyperapi"]
+          removal:
+            - "Server"
+            - "X-UPSTREAM-ID"
       - type: ACL
         setting:
           access_control: "allow"
           paths:
             - methods: "GET,POST,DELETE,PUT,OPTIONS,PATCH"
-              path_regex: ".*"
+              path_regex: "/api/user.*"
+            - methods: "GET"
+              path_regex: "/error.*"
+
+    sla:
+      - name: Default
+        filters:
+          - type: RateLimit
+            setting:
+              interval: 3
+              limit: 5
+              burst: 10
+
+  - service_id: test/upstream
+    path: /upstream
+    protocol: http
+    auth:
+      type: JWT
+    timeout: 3
+    load_balance: "random"
+    error_threshold: 3
+    error_reset: 60
+    retry_delay: 3
+    upstreams:
+      - id: 2
+        timeout: 3
+        target: "http://127.0.0.1:9999/"
+        max_conn: 10
+    filters: []
     sla:
       - name: Default
         filters:
@@ -35,13 +71,140 @@ services:
             setting:
               interval: 1
               limit: 100
-              burst: 200
+              burst: 100
+
+  - service_id: test/lb_random
+    path: /lb1
+    protocol: http
+    auth:
+      type: AppKey
+    timeout: 10
+    load_balance: "random"
+    error_threshold: 10
+    error_reset: 60
+    retry_delay: 10
+    upstreams:
+      - id: 11
+        timeout: 10
+        target: "http://127.0.0.1:9999/"
+        max_conn: 100
+      - id: 12
+        timeout: 10
+        target: "http://127.0.0.1:9999/"
+        max_conn: 100
+    filters: []
+    sla:
+      - name: Default
+        filters:
+          - type: RateLimit
+            setting:
+              interval: 1
+              limit: 100
+              burst: 100
+              
+  - service_id: test/lb_hash
+    path: /lb2
+    protocol: http
+    auth:
+      type: AppKey
+    timeout: 10
+    load_balance: "hash"
+    error_threshold: 10
+    error_reset: 60
+    retry_delay: 10
+    upstreams:
+      - id: 21
+        timeout: 10
+        target: "http://127.0.0.1:9999/"
+        max_conn: 100
+      - id: 22
+        timeout: 10
+        target: "http://127.0.0.1:9999/"
+        max_conn: 100
+    filters: []
+    sla:
+      - name: Default
+        filters:
+          - type: RateLimit
+            setting:
+              interval: 1
+              limit: 100
+              burst: 100
+
+  - service_id: test/lb_conn
+    path: /lb_conn
+    protocol: http
+    auth:
+      type: AppKey
+    timeout: 10
+    load_balance: "conn"
+    error_threshold: 10
+    error_reset: 60
+    retry_delay: 10
+    upstreams:
+      - id: 31
+        timeout: 10
+        target: "http://127.0.0.1:9999/random/0.1"
+        max_conn: 100
+      - id: 32
+        timeout: 10
+        target: "http://127.0.0.1:9999/random/0.2"
+        max_conn: 100
+    filters: []
+    sla:
+      - name: Default
+        filters:
+          - type: RateLimit
+            setting:
+              interval: 1
+              limit: 1000
+              burst: 1000
+
+  - service_id: test/lb_load
+    path: /lb_load
+    protocol: http
+    auth:
+      type: AppKey
+    timeout: 10
+    load_balance: "load"
+    error_threshold: 10
+    error_reset: 60
+    retry_delay: 10
+    upstreams:
+      - id: 41
+        timeout: 10
+        target: "http://127.0.0.1:9999/random/0.1"
+        max_conn: 100
+      - id: 42
+        timeout: 10
+        target: "http://127.0.0.1:9999/random/0.2"
+        max_conn: 100
+    filters: []
+    sla:
+      - name: Default
+        filters:
+          - type: RateLimit
+            setting:
+              interval: 1
+              limit: 100
+              burst: 100
 
 clients:
-  - client_id: account/crm
-    app_key: 1345432321
-    pub_key: ""
-    ip_whitelist: []
-    services:
-      leric/account_service: Default
+- app_key: 9cf3319cbd254202cf882a79a755ba6e
+  client_id: test/client
+  ip_whitelist: []
+  pub_key: '-----BEGIN PUBLIC KEY-----
+
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAERxp2aXX0l2/y2y32hnk+TsJakjqd
+
+    2DB414zO+kb1mdxM2rtq/j3WwoKEncd31UwOEMbNld/rpiP5o/sgiTUk9g==
+
+    -----END PUBLIC KEY-----'
+  services:
+    test/mws: Default
+    test/upstream: Default
+    test/lb_random: Default
+    test/lb_hash: Default
+    test/lb_conn: Default
+    test/lb_load: Default
 

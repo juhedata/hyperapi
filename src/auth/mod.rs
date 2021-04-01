@@ -76,10 +76,13 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             path: String::from("/test"),
             protocol: String::from("http"),
             auth: AuthSetting::AppKey(AppKeyAuth {}),
-            timeout: 3000,
+            timeout: 10,
+            error_threshold: 10,
+            error_reset: 60,
+            retry_delay: 10,
             load_balance: String::from("conn"),
             upstreams: vec![
-                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into() }
+                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into(), max_conn: 100 }
             ],
             filters: vec![
                 FilterSetting::Header(HeaderSetting { 
@@ -102,15 +105,18 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
         conf_tx.send(update).unwrap();
 
         // add a service with JwtAuth
-        let update = ConfigUpdate::ServiceUpdate(ServiceInfo{
+        let update = ConfigUpdate::ServiceUpdate(ServiceInfo {
             service_id: String::from("leric/test2"),
             path: String::from("/test1"),
             protocol: String::from("http"),
             auth: AuthSetting::JWT(JwtAuth {}),
             load_balance: String::from("load"),
-            timeout: 3000,
+            timeout: 10,
+            error_threshold: 10,
+            error_reset: 60,
+            retry_delay: 10,
             upstreams: vec![
-                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into() }
+                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into(), max_conn: 100 }
             ],
             filters: vec![
                 FilterSetting::ACL(ACLSetting {

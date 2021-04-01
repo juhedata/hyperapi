@@ -42,6 +42,9 @@ pub struct ServiceInfo {
     pub timeout: u64,
     pub filters: Vec<FilterSetting>,
     pub sla: Vec<ServiceLevel>,
+    pub error_threshold: u64,
+    pub error_reset: u64,
+    pub retry_delay: u64,
 }
 
 
@@ -57,6 +60,7 @@ pub struct Upstream {
     pub target: String,
     pub id: String,
     pub timeout: u64,
+    pub max_conn: u64,
 }
 
 

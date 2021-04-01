@@ -2,6 +2,7 @@ use hyper::{Body, Request, Response, Uri, header::HeaderValue, StatusCode};
 use hyper::client::HttpConnector;
 use hyper::client::Client;
 use hyper_rustls::HttpsConnector;
+use rustls::ClientConfig;
 use tower::Service;
 use std::pin::Pin;
 use std::task::{Poll, Context};
@@ -27,19 +28,40 @@ pub struct ProxyHandler {
     service_id: String,
     upstream_id: String,
     upstream: String,
+    timeout: Duration,
     client: Client<HttpsConnector<HttpConnector>, Body>,
 }
 
 impl ProxyHandler {
 
     pub fn new(service_id: &str, upstream: &Upstream) -> Self {
-        let tls = HttpsConnector::with_native_roots();
+        let mut connector = HttpConnector::new();
+        let timeout = Duration::from_secs(upstream.timeout);
+        connector.set_connect_timeout(Some(timeout));
+        connector.set_keepalive(Some(Duration::from_secs(30)));
+
+        let mut tls_config = ClientConfig::new();
+        tls_config.root_store = match rustls_native_certs::load_native_certs() {
+            Ok(store) => store,
+            Err((Some(store), err)) => {
+                log::warn!("Could not load all certificates: {:?}", err);
+                store
+            }
+            Err((None, err)) => Err(err).expect("cannot access native cert store"),
+        };
+        if tls_config.root_store.is_empty() {
+            panic!("no CA certificates found");
+        }
+
+        let tls = HttpsConnector::from((connector, tls_config));
         let client = Client::builder()
             .pool_idle_timeout(Duration::from_secs(upstream.timeout))
             .build::<_, Body>(tls);
+
         ProxyHandler { 
             service_id: String::from(service_id), 
             client, 
+            timeout,
             upstream: upstream.target.clone(), 
             upstream_id: upstream.id.clone(),
         }
@@ -62,13 +84,12 @@ impl ProxyHandler {
         parts.uri = new_uri.parse::<Uri>().unwrap();
         Request::from_parts(parts, body)
     }
-
 }
 
 impl Service<Request<Body>> for ProxyHandler
 {
     type Response = Response<Body>;
-    type Error = hyper::Error;
+    type Error = anyhow::Error;
     type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _c: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -84,10 +105,17 @@ impl Service<Request<Body>> for ProxyHandler
             &service_id, 
             &upstream_id,
         ]).inc();
-        
-        let f = self.client.request(req);
+        let sleep = tokio::time::sleep(self.timeout.clone());
+        let fut = self.client.request(req);
         Box::pin(async move {
-            let result = f.await;
+            let result = tokio::select! {
+                resp = fut => {
+                    resp.map_err(|e| e.into())
+                },
+                _ = sleep => {
+                    Err(anyhow::anyhow!("Request Timeout"))
+                },
+            };
             HTTP_REQ_INPROGRESS.with_label_values(&[
                 &service_id,
                 &upstream_id,

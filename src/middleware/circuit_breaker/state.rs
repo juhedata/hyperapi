@@ -8,21 +8,25 @@ pub struct CircuitBreakerConfig {
     pub retry_delay: Duration,
 }
 
+#[derive(Debug)]
 pub enum CircuitBreakerState {
     Open(OpenState),
     HalfOpen(HalfOpenState),
     Close(CloseState),
 }
 
+#[derive(Debug)]
 pub struct CloseState {
     pub errors: u64, 
     pub last_error: SystemTime,
 }
 
+#[derive(Debug)]
 pub struct HalfOpenState {
     pub last_attempt: SystemTime,
 }
 
+#[derive(Debug)]
 pub struct OpenState {
     pub last_attempt: SystemTime,
 }
@@ -78,7 +82,7 @@ impl CircuitBreakerState {
                 if now.duration_since(state.last_error).unwrap() >= config.error_reset {
                     *self = CircuitBreakerState::Close(CloseState { errors: 1, last_error: now });
                 } else {
-                    if state.errors > config.error_threshold {
+                    if state.errors >= config.error_threshold {
                         *self = CircuitBreakerState::Open(OpenState {last_attempt: now})
                     } else {
                         *self = CircuitBreakerState::Close(CloseState {

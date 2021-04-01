@@ -4,7 +4,6 @@ use std::time::Duration;
 use std::collections::HashMap;
 use tower::Service;
 use tower::steer::Steer;
-use tower::timeout::Timeout;
 use tower::discover::ServiceList;
 use tower::load::{PeakEwmaDiscover, Constant, PendingRequestsDiscover, CompleteOnResponse};
 use tower::balance::p2c::Balance;
@@ -38,62 +37,50 @@ impl Default for UpstreamMiddleware {
 impl UpstreamMiddleware {
 
     async fn service_worker(mut rx: mpsc::Receiver<MwPreRequest>, conf: ServiceInfo) {
-        let timeout = Duration::from_secs(conf.timeout);
-        let max_conn = 1000;
         let cb_config = CircuitBreakerConfig {
-            error_threshold: 10,    
-            error_reset: Duration::from_secs(60),
-            retry_delay: Duration::from_secs(60),
+            error_threshold: conf.error_threshold,    
+            error_reset: Duration::from_secs(conf.error_reset),
+            retry_delay: Duration::from_secs(conf.retry_delay),
         };
         let mut service = match conf.upstreams.len() {
             1 => {
                 let u = conf.upstreams.get(0).unwrap();
                 let us = ProxyHandler::new(&conf.service_id, u);
                 let cb = CircuitBreakerService::new(us, cb_config);
-                let proxy = Timeout::new(cb, timeout);
-                let limit = ConcurrencyLimit::new(proxy, max_conn);
-                let service = LoadShed::new(limit);
-                BoxService::new(service)
+                let limit = ConcurrencyLimit::new(cb, u.max_conn as usize);
+                BoxService::new(LoadShed::new(limit))
             },
             _ => {
-                let list: Vec<Timeout<CircuitBreakerService<ProxyHandler>>> = conf.upstreams.iter().map(|u| {
+                let list: Vec<ConcurrencyLimit<CircuitBreakerService<ProxyHandler>>> = conf.upstreams.iter().map(|u| {
                     let us = ProxyHandler::new(&conf.service_id, u);
                     let cb = CircuitBreakerService::new(us, cb_config.clone());
-                    Timeout::new(cb, timeout)
+                    ConcurrencyLimit::new(cb, u.max_conn as usize)
                 }).collect();
                 if conf.load_balance.eq("hash") {
                     // todo: hash based load-balance
                     let balance = Steer::new(list, |req: &Request<_>, s: &[_]| {
                         let total = s.len();
-                        let client_id = req.headers().get("X-CLIENT-ID").unwrap().as_bytes();
+                        let client_id = req.headers().get("x-client-id").unwrap().as_bytes();
                         let mut hasher = DefaultHasher::new();
                         Hash::hash_slice(&client_id, &mut hasher);
                         (hasher.finish() as usize) % total
                     });
-                    let limit = ConcurrencyLimit::new(balance, max_conn);
-                    let service = LoadShed::new(limit);
-                    BoxService::new(service)
+                    BoxService::new(LoadShed::new(balance))
                 } else if conf.load_balance.eq("load") {
                     let discover = ServiceList::new(list);
                     let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), CompleteOnResponse::default());
                     let balance = Balance::new(load);
-                    let limit = ConcurrencyLimit::new(balance, max_conn);
-                    let service = LoadShed::new(limit);
-                    BoxService::new(service)
+                    BoxService::new(LoadShed::new(balance))
                 } else if conf.load_balance.eq("conn") {
                     let discover = ServiceList::new(list);
                     let load = PendingRequestsDiscover::new(discover, CompleteOnResponse::default());
                     let balance = Balance::new(load);
-                    let limit = ConcurrencyLimit::new(balance, max_conn);
-                    let service = LoadShed::new(limit);
-                    BoxService::new(service)
+                    BoxService::new(LoadShed::new(balance))
                 } else {  // random
                     let discover = ServiceList::new(list);
                     let load = Constant::new(discover, 1);
                     let balance = Balance::new(load);
-                    let limit = ConcurrencyLimit::new(balance, max_conn);
-                    let service = LoadShed::new(limit);
-                    BoxService::new(service)
+                    BoxService::new(LoadShed::new(balance))
                 }
 
             },
