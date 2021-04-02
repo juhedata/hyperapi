@@ -42,7 +42,7 @@ impl Service<Request<Body>> for RequestHandler {
         let auth = self.auth.clone();
 
         let span = span!(Level::DEBUG, "request");
-        event!(Level::INFO, "{:?} {:?}", req.method(), req.uri());
+        event!(Level::DEBUG, "{:?} {:?}", req.method(), req.uri());
         Box::pin(async move {
             // auth
             let (tx, rx) = oneshot::channel();

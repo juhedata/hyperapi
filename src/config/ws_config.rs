@@ -3,10 +3,10 @@ use crate::config::ConfigUpdate;
 use async_tungstenite::tokio::connect_async;
 use async_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
-
+use tracing::{event, Level};
 
 pub async fn watch_config(ws_url: String, sender: mpsc::Sender<ConfigUpdate>) {
-    println!("connecting to websocket");
+    event!(Level::INFO, "connecting to websocket");
     let result = connect_async(ws_url.clone()).await;
     if let Ok((mut ws, _)) = result {
         while let Some(res) = ws.next().await {
@@ -17,7 +17,7 @@ pub async fn watch_config(ws_url: String, sender: mpsc::Sender<ConfigUpdate>) {
                         if let Ok(up) = update {
                             let _ = sender.send(up).await;
                         } else {
-                            println!("bad config update message: {:?}", update);
+                            event!(Level::ERROR, "bad config update message: {:?}", update);
                         }
                     },
                     Message::Ping(sn) => {

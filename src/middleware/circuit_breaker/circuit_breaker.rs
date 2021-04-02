@@ -37,8 +37,12 @@ impl<S> Service<Request<Body>> for CircuitBreakerService<S>
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if let Poll::Ready(r) = self.inner.poll_ready(cx) {
-            let mut stat = self.state.lock().unwrap();
-            if stat.check_state(&self.config) {
+            if self.config.error_threshold > 0 {
+                let mut stat = self.state.lock().unwrap();
+                if stat.check_state(&self.config) {
+                    return Poll::Ready(r)
+                }
+            } else {  // circurt breaker is off
                 return Poll::Ready(r)
             }
         }
@@ -72,6 +76,9 @@ impl<Fut> Future for CBFuture<Fut>
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let result: Result<Response<Body>, anyhow::Error> = ready!(this.fut.poll(cx));
+        if this.config.error_threshold == 0 {  // circurt breaker is off
+            return Poll::Ready(result);
+        }
         if let Ok(mut r) = result {
             if r.status().as_u16() >= 500 {
                 let mut state = this.state.lock().unwrap();

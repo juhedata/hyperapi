@@ -1,5 +1,6 @@
 use hyper::{Request, Body, StatusCode, Response};
 use regex::Regex;
+use tracing::{event, Level};
 use std::{collections::HashMap, str::FromStr};
 use std::collections::HashSet;
 use std::future::Future;
@@ -113,7 +114,7 @@ impl ACLMatcher {
             if let Ok(regex) = Regex::from_str(&p.path_regex) {
                 paths.push((regex, methodset));
             } else {
-                println!("bad regex {}", p.path_regex);
+                event!(Level::ERROR, "bad regex {}", p.path_regex);
             }
         }
         ACLMatcher { on_match, paths }

@@ -5,6 +5,7 @@ use std::task::{Context, Poll};
 use crate::config::{file_config, ws_config, etcd_config, ConfigUpdate};
 use pin_project::pin_project;
 use rand::Rng;
+use tracing::{event, Level};
 
 
 #[pin_project]
@@ -26,7 +27,7 @@ impl ConfigSource {
                 loop {
                     ws_config::watch_config(source.clone(), tx.clone()).await;
                     let wait_time = rand::thread_rng().gen_range(10, 100);
-                    println!("ws connection lost, sleep {}s to reconnect", &wait_time);
+                    event!(Level::WARN, "ws connection lost, sleep {}s to reconnect", &wait_time);
                     tokio::time::sleep(Duration::from_secs(wait_time)).await;
                 }
             });
@@ -35,7 +36,7 @@ impl ConfigSource {
                 loop {
                     etcd_config::watch_config(source.clone(), tx.clone()).await;
                     let wait_time = rand::thread_rng().gen_range(10, 100);
-                    println!("etcd connection lost, sleep {}s to reconnect", &wait_time);
+                    event!(Level::WARN, "etcd connection lost, sleep {}s to reconnect", &wait_time);
                     tokio::time::sleep(Duration::from_secs(wait_time)).await;
                 }
             });

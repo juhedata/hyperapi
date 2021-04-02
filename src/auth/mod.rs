@@ -77,7 +77,7 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             protocol: String::from("http"),
             auth: AuthSetting::AppKey(AppKeyAuth {}),
             timeout: 10,
-            error_threshold: 10,
+            error_threshold: 100,
             error_reset: 60,
             retry_delay: 10,
             load_balance: String::from("conn"),

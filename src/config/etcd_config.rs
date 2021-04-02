@@ -1,4 +1,5 @@
 use tokio::sync::mpsc;
+use tracing::{event, Level};
 use crate::config::{ConfigUpdate, ServiceInfo, ClientInfo};
 use etcd_client::{Client, EventType, GetOptions, WatchOptions};
 
@@ -28,7 +29,7 @@ pub async fn watch_config(source: String, sender: mpsc::Sender<ConfigUpdate>) {
         let (_watcher, mut stream ) = client.watch(conf_path, Some(watch_option)).await.unwrap();
         while let Some(resp) = stream.message().await.unwrap() {
             if resp.canceled() {
-                println!("watch canceled!");
+                event!(Level::INFO, "watch canceled!");
                 break;
             }
             for event in resp.events() {
@@ -54,7 +55,7 @@ pub async fn watch_config(source: String, sender: mpsc::Sender<ConfigUpdate>) {
             }
         }
     } else {
-        println!("Fail to connect etcd");
+        event!(Level::ERROR, "Fail to connect etcd");
     }
 }
 

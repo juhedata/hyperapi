@@ -5,6 +5,7 @@ use hyper::http::request::Parts;
 use jsonwebtoken as jwt;
 use std::time::SystemTime;
 use regex::Regex;
+use tracing::{event, Level};
 use serde::{Serialize, Deserialize};
 use serde_urlencoded;
 
@@ -65,14 +66,14 @@ impl AuthService {
     }
 
     pub async fn start(&mut self) {
-        println!("auth service started");
+        event!(Level::INFO, "auth service started");
         loop {
             tokio::select! {
                 conf_update = self.conf_receiver.recv() => {
                     if let Ok(config) = conf_update {
                         self.update_config(config);
                     } else {
-                        println!("failed to receive config update")
+                        event!(Level::WARN, "failed to receive config update");
                     }
                 },
                 auth_request = self.auth_receiver.recv() => {
@@ -128,7 +129,6 @@ impl AuthService {
                 match service.auth {
                     AuthSetting::AppKey(_) => {
                         if let Some(appkey) = Self::get_app_key(&head) {
-                            //println!("appkey: {}", appkey);
                             if let Some(app_id) = self.apps_key.get(&appkey) {
                                 if let Some(client) = self.apps.get(app_id) {
                                     if client.app_key == appkey {  // appkey might be updated
@@ -256,7 +256,7 @@ impl AuthService {
                     }
                 }
             } else {
-                println!("{:?}", query_pairs);
+                event!(Level::DEBUG, "{:?}", query_pairs);
             }
         }
 
@@ -294,7 +294,7 @@ impl AuthService {
                     return Some(td.claims.sub);
                 }
             } else {
-                println!("{:?}", t);
+                event!(Level::DEBUG, "Invalid JWT {:?}", t);
             }
         }
         None
