@@ -6,6 +6,7 @@
     - [Installation](gateway/installation.md)
     - [Config Format](gateway/config-format.md)
     - [Middlewares](gateway/middlewares.md)
+    - [Benchmark](gateway/benckmark.md)
 - [SaaS](saas/readme.md)
     - [User&Team](saas/user.md)
     - [Quick Start with Service](saas/tutorial-service.md)

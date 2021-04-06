@@ -3,7 +3,11 @@ name = "hyperapi"
 version = "0.1.0"
 authors = ["Leric Zhang <leric.zhang@gmail.com>"]
 edition = "2018"
-
+license = "MIT"
+description = "An easy to use API Gateway"
+homepage = "https://www.juapi.cn/"
+repository = "https://github.com/juhedata/hyperapi"
+keywords = ["api", "gateway"]
 
 [dependencies]
 hyper = { version = "0.14", features = ["full"] }

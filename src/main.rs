@@ -21,7 +21,7 @@ async fn main() {
     let (non_blocking_writer, _guard) = tracing_appender::non_blocking(std::io::stdout());
     let bunyan_formatting_layer = BunyanFormattingLayer::new(app_name, non_blocking_writer);
     let subscriber = Registry::default()
-        .with(EnvFilter::new("WARN"))
+        .with(EnvFilter::new("INFO"))
         .with(JsonStorageLayer)
         .with(bunyan_formatting_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
