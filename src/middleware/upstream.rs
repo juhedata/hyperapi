@@ -57,7 +57,6 @@ impl UpstreamMiddleware {
                     ConcurrencyLimit::new(cb, u.max_conn as usize)
                 }).collect();
                 if conf.load_balance.eq("hash") {
-                    // todo: hash based load-balance
                     let balance = Steer::new(list, |req: &Request<_>, s: &[_]| {
                         let total = s.len();
                         let client_id = req.headers().get("x-client-id").unwrap().as_bytes();

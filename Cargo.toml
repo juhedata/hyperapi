@@ -8,6 +8,7 @@ description = "An easy to use API Gateway"
 homepage = "https://www.juapi.cn/"
 repository = "https://github.com/juhedata/hyperapi"
 keywords = ["api", "gateway"]
+exclude = ['docs/*', 'ci/*', '.github/*']
 
 [dependencies]
 hyper = { version = "0.14", features = ["full"] }
