@@ -121,10 +121,13 @@ pub struct AppKeyAuth {}
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct JwtAuth {}
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct NoAuth {}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type")]
 pub enum AuthSetting {
+    None(NoAuth),
     AppKey(AppKeyAuth),
     JWT(JwtAuth),
 }

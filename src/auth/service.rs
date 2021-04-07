@@ -196,6 +196,19 @@ impl AuthService {
                             error = "Invalid JWT payload".into();
                         }
                     },
+                    AuthSetting::None(_) => {
+                        let resp = AuthResponse {
+                            success: true,
+                            error: error,
+                            client_id: String::from("None"),
+                            service_id: service.service_id.clone(),
+                            sla: String::from("None"),
+                            service_filters: service.filters.clone(),
+                            client_filters: vec![],
+                        };
+                        let _ = result_channel.send((head, resp));
+                        return
+                    },
                 }
             } else {
                 error = format!("No service matched for service_id {}", service_id);
