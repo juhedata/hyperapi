@@ -6,11 +6,9 @@ JuAPI网关安装手册
 
 ### 下载
 
-[Windows](/releases/hyperapi-0.1-x86_64-windows)
+可以在Github下载预编译的二进制文件：
 
-[Linux](/releases/hyperapi-0.1-x86_64-linux)
-
-[MacOS](/releases/hyperapi-0.1-x86_64-darwin)
+https://github.com/juhedata/hyperapi/releases
 
 
 ### 编译
@@ -21,14 +19,10 @@ JuAPI网关安装手册
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-编译API网关:
+编译安装API网关:
 
 ```shell script
-git clone git@github.com:leric/apihub.git 
-cd apihub
-git checkout v1.0
-cargo build --release
-cp target/release/hyperapi /usr/local/bin/
+cargo install hyperapi
 ```
 
 
@@ -38,13 +32,17 @@ cp target/release/hyperapi /usr/local/bin/
 使用本地配置文件运行：
 
 ```shell script
-hyperapi --listen 0.0.0.0:8080  --config file:///etc/hyperapi/config.yaml
+hyperapi --listen 0.0.0.0:9999  --config file:///etc/hyperapi/config.yaml
 ```
 
 连接到JuAPI SaaS服务获取配置：
 
 ```shell script
-hyperapi --listen 0.0.0.0:8080 --config "ws://www.juapi.cn/gw/ws/<env-access-key>"
+hyperapi --listen 0.0.0.0:9999 --config "ws://www.juapi.cn/gw/ws/<env-access-key>"
 ```
 
+启用HTTPS：
 
+```
+hyperapi --listen 0.0.0.0:443 --config "ws://www.juapi.cn/gw/ws/<env-access-key>" --cert_file cert_file.pem --key_file private_key.pem
+```
