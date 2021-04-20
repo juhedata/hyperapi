@@ -13,3 +13,5 @@ cargo_build:
   tags:
     - fastapi
   script: "cargo build --release && scp target/release/hyperapi gitlab-runner@10.0.49.83:/home/gitlab-runner/tianju/releases/hyperapi-0.1-x86_64-linux"
+  only:
+    - master

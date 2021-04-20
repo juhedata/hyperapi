@@ -37,11 +37,17 @@ pub struct ServiceInfo {
     pub path: String,
     pub protocol: String,
     pub auth: AuthSetting,
-    pub upstreams: Vec<Upstream>,
-    pub load_balance: String,
-    pub timeout: u64,
+    pub timeout: u32,
     pub filters: Vec<FilterSetting>,
     pub sla: Vec<ServiceLevel>,
+    pub deployments: Vec<Deployment>,
+}
+
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Deployment {
+    pub upstreams: Vec<Upstream>,
+    pub load_balance: String,
     pub error_threshold: u64,
     pub error_reset: u64,
     pub retry_delay: u64,
@@ -57,10 +63,11 @@ pub struct ServiceLevel {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Upstream {
-    pub target: String,
     pub id: String,
-    pub timeout: u64,
+    pub target: String,
     pub max_conn: u64,
+    pub weight: u32,
+    pub version: String,
 }
 
 

@@ -6,6 +6,7 @@ mod header;
 mod acl;
 mod logger;
 mod circuit_breaker;
+mod weighted;
 
 
 pub use middleware::{Middleware, MiddlewareRequest, MiddlewareHandle, RequestContext, 

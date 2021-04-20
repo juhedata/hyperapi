@@ -34,9 +34,9 @@ pub struct ProxyHandler {
 
 impl ProxyHandler {
 
-    pub fn new(service_id: &str, upstream: &Upstream) -> Self {
+    pub fn new(service_id: &str, upstream: &Upstream, timeout: u32) -> Self {
         let mut connector = HttpConnector::new();
-        let timeout = Duration::from_secs(upstream.timeout);
+        let timeout = Duration::from_secs(timeout as u64);
         connector.set_connect_timeout(Some(timeout));
         connector.set_keepalive(Some(Duration::from_secs(30)));
 
@@ -55,7 +55,7 @@ impl ProxyHandler {
 
         let tls = HttpsConnector::from((connector, tls_config));
         let client = Client::builder()
-            .pool_idle_timeout(Duration::from_secs(upstream.timeout))
+            .pool_idle_timeout(timeout)
             .build::<_, Body>(tls);
 
         ProxyHandler { 

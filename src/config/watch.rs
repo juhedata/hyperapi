@@ -26,7 +26,7 @@ impl ConfigSource {
             tokio::spawn(async move {
                 loop {
                     ws_config::watch_config(source.clone(), tx.clone()).await;
-                    let wait_time = rand::thread_rng().gen_range(10, 100);
+                    let wait_time = rand::thread_rng().gen_range(10..100);
                     event!(Level::WARN, "ws connection lost, sleep {}s to reconnect", &wait_time);
                     tokio::time::sleep(Duration::from_secs(wait_time)).await;
                 }
@@ -35,7 +35,7 @@ impl ConfigSource {
             tokio::spawn(async move {
                 loop {
                     etcd_config::watch_config(source.clone(), tx.clone()).await;
-                    let wait_time = rand::thread_rng().gen_range(10, 100);
+                    let wait_time = rand::thread_rng().gen_range(10..100);
                     event!(Level::WARN, "etcd connection lost, sleep {}s to reconnect", &wait_time);
                     tokio::time::sleep(Duration::from_secs(wait_time)).await;
                 }

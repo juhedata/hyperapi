@@ -1,11 +1,13 @@
-use hyper::{Request, Response, Body, StatusCode, header::{HeaderName, HeaderValue}};
+use crate::middleware::weighted::WeightedBalance;
+use hyper::{Request, Response, Body, StatusCode};
+use hyper::header::{HeaderName, HeaderValue};
 use tokio::sync::mpsc;
 use std::time::Duration;
 use std::collections::HashMap;
 use tower::Service;
 use tower::steer::Steer;
 use tower::discover::ServiceList;
-use tower::load::{PeakEwmaDiscover, Constant, PendingRequestsDiscover, CompleteOnResponse};
+use tower::load::{PeakEwmaDiscover, PendingRequestsDiscover, CompleteOnResponse, Constant};
 use tower::balance::p2c::Balance;
 use tower::limit::concurrency::ConcurrencyLimit;
 use tower::load_shed::LoadShed;
@@ -14,7 +16,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
-use crate::config::{ConfigUpdate, ServiceInfo};
+use crate::config::{ConfigUpdate, ServiceInfo, Deployment};
 use crate::middleware::{Middleware, MwPreRequest, MwPreResponse, MwPostRequest};
 use crate::middleware::proxy::ProxyHandler;
 use tracing::{event, Level};
@@ -37,53 +39,8 @@ impl Default for UpstreamMiddleware {
 impl UpstreamMiddleware {
 
     async fn service_worker(mut rx: mpsc::Receiver<MwPreRequest>, conf: ServiceInfo) {
-        let cb_config = CircuitBreakerConfig {
-            error_threshold: conf.error_threshold,    
-            error_reset: Duration::from_secs(conf.error_reset),
-            retry_delay: Duration::from_secs(conf.retry_delay),
-        };
-        let mut service = match conf.upstreams.len() {
-            1 => {
-                let u = conf.upstreams.get(0).unwrap();
-                let us = ProxyHandler::new(&conf.service_id, u);
-                let cb = CircuitBreakerService::new(us, cb_config);
-                let limit = ConcurrencyLimit::new(cb, u.max_conn as usize);
-                BoxService::new(LoadShed::new(limit))
-            },
-            _ => {
-                let list: Vec<ConcurrencyLimit<CircuitBreakerService<ProxyHandler>>> = conf.upstreams.iter().map(|u| {
-                    let us = ProxyHandler::new(&conf.service_id, u);
-                    let cb = CircuitBreakerService::new(us, cb_config.clone());
-                    ConcurrencyLimit::new(cb, u.max_conn as usize)
-                }).collect();
-                if conf.load_balance.eq("hash") {
-                    let balance = Steer::new(list, |req: &Request<_>, s: &[_]| {
-                        let total = s.len();
-                        let client_id = req.headers().get("x-client-id").unwrap().as_bytes();
-                        let mut hasher = DefaultHasher::new();
-                        Hash::hash_slice(&client_id, &mut hasher);
-                        (hasher.finish() as usize) % total
-                    });
-                    BoxService::new(LoadShed::new(balance))
-                } else if conf.load_balance.eq("load") {
-                    let discover = ServiceList::new(list);
-                    let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), CompleteOnResponse::default());
-                    let balance = Balance::new(load);
-                    BoxService::new(LoadShed::new(balance))
-                } else if conf.load_balance.eq("conn") {
-                    let discover = ServiceList::new(list);
-                    let load = PendingRequestsDiscover::new(discover, CompleteOnResponse::default());
-                    let balance = Balance::new(load);
-                    BoxService::new(LoadShed::new(balance))
-                } else {  // random
-                    let discover = ServiceList::new(list);
-                    let load = Constant::new(discover, 1);
-                    let balance = Balance::new(load);
-                    BoxService::new(LoadShed::new(balance))
-                }
 
-            },
-        };
+        let mut service = Self::build_service(&conf.service_id, &conf.deployments.get(0).unwrap(), conf.timeout.clone());
 
         while let Some(MwPreRequest {context, mut request, result, .. }) = rx.recv().await {
             event!(Level::DEBUG, "request {:?}", request.uri());
@@ -123,6 +80,56 @@ impl UpstreamMiddleware {
         }
     }
 
+    fn build_service(service_id: &str, deploy: &Deployment, timeout: u32) -> BoxService<Request<Body>, Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
+        let cb_config = CircuitBreakerConfig {
+            error_threshold: deploy.error_threshold,    
+            error_reset: Duration::from_secs(deploy.error_reset),
+            retry_delay: Duration::from_secs(deploy.retry_delay),
+        };
+        match deploy.upstreams.len() {
+            1 => {
+                let u = deploy.upstreams.get(0).unwrap();
+                let us = ProxyHandler::new(service_id, u, timeout);
+                let limit = ConcurrencyLimit::new(us, u.max_conn as usize);
+                let cb = CircuitBreakerService::new(LoadShed::new(limit), cb_config);
+                BoxService::new(cb)
+            },
+            _ => {
+                let list: Vec<Constant<CircuitBreakerService<LoadShed<ConcurrencyLimit<ProxyHandler>>>, u32>> = deploy.upstreams.iter().map(|u| {
+                    let us = ProxyHandler::new(service_id, u, timeout);
+                    let limit = ConcurrencyLimit::new(us, u.max_conn as usize);
+                    let cb = CircuitBreakerService::new(LoadShed::new(limit), cb_config);
+                    Constant::new(cb, u.weight)
+                }).collect();
+
+                if deploy.load_balance.eq("hash") {
+                    let list: Vec<LoadShed<Constant<CircuitBreakerService<LoadShed<ConcurrencyLimit<ProxyHandler>>>, u32>>> = list.into_iter().map(|s| LoadShed::new(s)).collect();
+                    let balance = Steer::new(list, |req: &Request<_>, s: &[_]| {
+                        let total = s.len();
+                        let client_id = req.headers().get("x-client-id").unwrap().as_bytes();
+                        let mut hasher = DefaultHasher::new();
+                        Hash::hash_slice(&client_id, &mut hasher);
+                        (hasher.finish() as usize) % total
+                    });
+                    BoxService::new(balance)
+                } else if deploy.load_balance.eq("load") {
+                    let discover = ServiceList::new(list);
+                    let load = PeakEwmaDiscover::new(discover, Duration::from_millis(50), Duration::from_secs(1), CompleteOnResponse::default());
+                    let balance = Balance::new(load);
+                    BoxService::new(balance)
+                } else if deploy.load_balance.eq("conn") {
+                    let discover = ServiceList::new(list);
+                    let load = PendingRequestsDiscover::new(discover, CompleteOnResponse::default());
+                    let balance = Balance::new(load);
+                    BoxService::new(balance)
+                } else {  // weighted random
+                    let discover = ServiceList::new(list);
+                    let balance = WeightedBalance::new(discover);
+                    BoxService::new(balance)
+                }
+            },
+        }
+    }
 }
 
 
@@ -171,7 +178,7 @@ impl Middleware for UpstreamMiddleware {
             ConfigUpdate::ServiceUpdate(conf) => {
                 let (tx, rx) = mpsc::channel(10);
                 let service_id = conf.service_id.clone();
-                if (&conf.upstreams).len() > 0 {
+                if (&conf.deployments).len() > 0 {
                     tokio::spawn(async move {
                         Self::service_worker(rx, conf).await;
                     });

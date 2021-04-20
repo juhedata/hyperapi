@@ -29,7 +29,7 @@ impl<S> CircuitBreakerService<S> {
 
 
 impl<S> Service<Request<Body>> for CircuitBreakerService<S> 
-    where S: Service<Request<Body>, Response=Response<Body>, Error=anyhow::Error>,
+    where S: Service<Request<Body>, Response=Response<Body>, Error=Box<dyn std::error::Error + Send + Sync>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -59,7 +59,7 @@ impl<S> Service<Request<Body>> for CircuitBreakerService<S>
 
 #[pin_project]
 pub struct CBFuture<Fut> 
-    where Fut: Future<Output=Result<Response<Body>, anyhow::Error>>
+    where Fut: Future<Output=Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>>>
 {
     #[pin]
     fut: Fut,
@@ -69,16 +69,20 @@ pub struct CBFuture<Fut>
 
 
 impl<Fut> Future for CBFuture<Fut> 
-    where Fut: Future<Output=Result<Response<Body>, anyhow::Error>>
+    where Fut: Future<Output=Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>>>
 {
     type Output = Fut::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let result: Result<Response<Body>, anyhow::Error> = ready!(this.fut.poll(cx));
+        
+        // call inner service
+        let result: Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>> = ready!(this.fut.poll(cx));
         if this.config.error_threshold == 0 {  // circurt breaker is off
             return Poll::Ready(result);
         }
+
+        // update circuit breaker counter
         if let Ok(mut r) = result {
             if r.status().as_u16() >= 500 {
                 let mut state = this.state.lock().unwrap();
@@ -104,3 +108,4 @@ impl<Fut> Future for CBFuture<Fut>
         }
     }
 }
+

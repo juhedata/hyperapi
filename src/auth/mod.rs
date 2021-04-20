@@ -77,12 +77,14 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             protocol: String::from("http"),
             auth: AuthSetting::AppKey(AppKeyAuth {}),
             timeout: 10,
-            error_threshold: 100,
-            error_reset: 60,
-            retry_delay: 10,
-            load_balance: String::from("conn"),
-            upstreams: vec![
-                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into(), max_conn: 100 }
+            deployments: vec![
+                Deployment {
+                    error_threshold: 100,
+                    error_reset: 60,
+                    retry_delay: 10,
+                    load_balance: String::from("conn"),
+                    upstreams: vec![Upstream {target: String::from("http://api.leric.net/test/"), weight: 100, version: "0.1".into(), id: "1".into(), max_conn: 100 }],
+                }
             ],
             filters: vec![
                 FilterSetting::Header(HeaderSetting { 
@@ -110,13 +112,15 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             path: String::from("/test1"),
             protocol: String::from("http"),
             auth: AuthSetting::JWT(JwtAuth {}),
-            load_balance: String::from("load"),
             timeout: 10,
-            error_threshold: 10,
-            error_reset: 60,
-            retry_delay: 10,
-            upstreams: vec![
-                Upstream { target: String::from("http://api.leric.net/test/"), timeout: 3, id: "1".into(), max_conn: 100 }
+            deployments: vec![
+                Deployment {
+                    error_threshold: 100,
+                    error_reset: 60,
+                    retry_delay: 10,
+                    load_balance: String::from("load"),
+                    upstreams: vec![Upstream {target: String::from("http://api.leric.net/test/"), weight: 100, version: "0.1".into(), id: "1".into(), max_conn: 100 }],
+                }
             ],
             filters: vec![
                 FilterSetting::ACL(ACLSetting {

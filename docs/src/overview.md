@@ -18,6 +18,8 @@ JuAPI定位于服务API运行阶段的需求，提供开源的hyperapi网关实�
 
 JuAPI使用OAS作为定义API的标准格式，通过API定义文件与支持OAS的API设计开发工具集成。
 
+![Architect](images/arch.jpg)
+
 
 ## 开源API网关对比
 
