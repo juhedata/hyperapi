@@ -49,16 +49,6 @@ where
             _req: PhantomData,
         })
     }
-
-    /// Returns the number of endpoints currently tracked by the balancer.
-    pub fn len(&self) -> usize {
-        self.services.len()
-    }
-
-    /// Returns whether or not the balancer is empty.
-    pub fn is_empty(&self) -> bool {
-        self.services.is_empty()
-    }
 }
 
 impl<D, Req> WeightedBalance<D, Req>
@@ -84,11 +74,11 @@ where
                 Some(Change::Remove(key)) => {
                     trace!("remove");
                     self.services.evict(&key);
-                }
+                },
                 Some(Change::Insert(key, svc)) => {
                     trace!("insert");
                     self.services.push(key, svc);
-                }
+                },
             }
         }
     }
@@ -133,9 +123,10 @@ where
                 let total: u32 = weights.iter().sum();
                 let mut point = self.rng.gen_range(0..total);
                 for i in 0..weights.len() {
-                    point = point - weights[i];
-                    if point <= 0 {
+                    if point <= weights[i] {
                         return Some(i)
+                    } else {
+                        point = point - weights[i] 
                     }
                 }
                 Some(len - 1)

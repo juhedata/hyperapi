@@ -77,13 +77,17 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             protocol: String::from("http"),
             auth: AuthSetting::AppKey(AppKeyAuth {}),
             timeout: 10,
-            deployments: vec![
-                Deployment {
+            load_balance: String::from("conn"),
+            upstreams: vec![
+                Upstream {
+                    target: String::from("http://api.leric.net/test/"), 
+                    weight: 100, 
+                    version: "0.1".into(), 
+                    id: "1".into(), 
+                    max_conn: 100,
                     error_threshold: 100,
                     error_reset: 60,
                     retry_delay: 10,
-                    load_balance: String::from("conn"),
-                    upstreams: vec![Upstream {target: String::from("http://api.leric.net/test/"), weight: 100, version: "0.1".into(), id: "1".into(), max_conn: 100 }],
                 }
             ],
             filters: vec![
@@ -113,13 +117,17 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             protocol: String::from("http"),
             auth: AuthSetting::JWT(JwtAuth {}),
             timeout: 10,
-            deployments: vec![
-                Deployment {
+            load_balance: String::from("load"),
+            upstreams: vec![
+                Upstream {
+                    id: "1".into(), 
+                    max_conn: 100,
+                    target: String::from("http://api.leric.net/test/"),
                     error_threshold: 100,
                     error_reset: 60,
                     retry_delay: 10,
-                    load_balance: String::from("load"),
-                    upstreams: vec![Upstream {target: String::from("http://api.leric.net/test/"), weight: 100, version: "0.1".into(), id: "1".into(), max_conn: 100 }],
+                    weight: 100,
+                    version: "0.1".into(),
                 }
             ],
             filters: vec![

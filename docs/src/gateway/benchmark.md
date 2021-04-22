@@ -3,107 +3,153 @@ Load Test
 
 测试加入API网关对原有请求路径产生的性能影响。
 
-运行环境为两台KVM虚拟机：
+测试环境为三台阿里云`ecs.sn1.medium`2CPU4G服务器，分别为Nginx挡板机，ab测试机，和API网关测试机
 
-    Host CPU：Intel(R) Xeon(R) CPU E5-2680 v3 @ 2.50GHz
-    VCPU：4
-    Memory：8G
-    OS： CentOS 8
+## Server setup
 
-Nginx独立运行在一个虚拟机10.0.49.84，Hyperapi网关运行在虚拟机10.0.49.83，测试工具AB与网关运行在同一个服务器10.0.49.83。
+### Nginx
+
+```bash
+apt update
+apt install nginx
+```
+
+### ab
+
+```bash
+apt update
+apt install apache2-utils
+```
+
+### API Gateway
+
+```bash
+wget https://github.com/juhedata/hyperapi/releases/download/v0.1.0/hyperapi-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+tar zxf hyperapi-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+./hyperapi --config config.yaml --listen 0.0.0.0:9999
+```
+
+config.yaml
+
+```yaml
+services:
+  - service_id: test/mws
+    path: /mws
+    protocol: http
+    auth:
+      type: AppKey
+    timeout: 3
+    load_balance: "load"
+    error_threshold: 10
+    error_reset: 60
+    retry_delay: 10
+    upstreams:
+      - id: 1
+        timeout: 3
+        target: "http://192.168.0.95/"
+        max_conn: 1000
+    filters: []
+    sla:
+      - name: Default
+        filters:
+          - type: RateLimit
+            setting:
+              interval: 10
+              limit: 100000
+              burst: 100000
+
+clients:
+- app_key: 9cf3319cbd254202cf882a79a755ba6e
+  client_id: test/client
+  ip_whitelist: []
+  pub_key: '-----BEGIN PUBLIC KEY-----
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAERxp2aXX0l2/y2y32hnk+TsJakjqd
+    2DB414zO+kb1mdxM2rtq/j3WwoKEncd31UwOEMbNld/rpiP5o/sgiTUk9g==
+    -----END PUBLIC KEY-----'
+  services:
+    test/mws: Default
+```
 
 
-直接访问Nginx静态页面：
+## Nginx静态页基准测试
 
 ```
-[gitlab-runner@airbus ~]$ ab -n 1000000 -c 100 http://10.0.49.84/test.html
-
-Server Software:        nginx/1.14.1
-Server Hostname:        10.0.49.84
+root@ab-test:~# ab -n 100000 -c 100 http://192.168.0.95/test.html
+Server Software:        nginx/1.18.0
+Server Hostname:        192.168.0.95
 Server Port:            80
 
 Document Path:          /test.html
-Document Length:        75 bytes
+Document Length:        76 bytes
 
 Concurrency Level:      100
-Time taken for tests:   60.655 seconds
-Complete requests:      1000000
+Time taken for tests:   5.089 seconds
+Complete requests:      100000
 Failed requests:        0
-Write errors:           0
-Total transferred:      306000000 bytes
-HTML transferred:       75000000 bytes
-Requests per second:    16486.61 [#/sec] (mean)
-Time per request:       6.066 [ms] (mean)
-Time per request:       0.061 [ms] (mean, across all concurrent requests)
-Transfer rate:          4926.66 [Kbytes/sec] received
+Total transferred:      31600000 bytes
+HTML transferred:       7600000 bytes
+Requests per second:    19651.91 [#/sec] (mean)
+Time per request:       5.089 [ms] (mean)
+Time per request:       0.051 [ms] (mean, across all concurrent requests)
+Transfer rate:          6064.46 [Kbytes/sec] received
 
 Connection Times (ms)
               min  mean[+/-sd] median   max
-Connect:        0    2   1.1      2      12
-Processing:     0    4   1.9      4      35
-Waiting:        0    3   1.7      3      34
-Total:          1    6   2.4      6      38
+Connect:        0    2   0.8      2       3
+Processing:     1    4   0.7      4      10
+Waiting:        0    3   0.8      3       9
+Total:          2    5   0.8      5      12
 
 Percentage of the requests served within a certain time (ms)
-  50%      6
-  66%      7
-  75%      7
-  80%      8
-  90%      9
-  95%     10
-  98%     12
-  99%     14
- 100%     38 (longest request)
+  50%      5
+  66%      5
+  75%      6
+  80%      6
+  90%      6
+  95%      6
+  98%      6
+  99%      7
+ 100%     12 (longest request)
+ ```
+
+
+ ## hyperapi网关转发测试
 
 ```
-
-
-通过Hyperapi网关访问Nginx静态页面：
-
-```
-[gitlab-runner@airbus ~]$ ab -n 1000000 -c 100 http://10.0.49.83:9999/jmeter/~099b24812494b6441562dce73d4f717e/test.html
-
-Server Software:
-Server Hostname:        10.0.49.83
+root@ab-test:~# ab -n 100000 -c 100  http://192.168.0.94:9999/mws/~9cf3319cbd254202cf882a79a755ba6e/test.html
+Server Software:        nginx/1.18.0
+Server Hostname:        192.168.0.94
 Server Port:            9999
 
-Document Path:          /jmeter/~099b24812494b6441562dce73d4f717e/test.html
-Document Length:        75 bytes
+Document Path:          /mws/~9cf3319cbd254202cf882a79a755ba6e/test.html
+Document Length:        76 bytes
 
 Concurrency Level:      100
-Time taken for tests:   102.235 seconds
-Complete requests:      1000000
-Failed requests:        8
-   (Connect: 0, Receive: 0, Length: 8, Exceptions: 0)
-Write errors:           0
-Non-2xx responses:      8
-Total transferred:      446947526 bytes
-HTML transferred:       74999592 bytes
-Requests per second:    9781.43 [#/sec] (mean)
-Time per request:       10.223 [ms] (mean)
-Time per request:       0.102 [ms] (mean, across all concurrent requests)
-Transfer rate:          4269.32 [Kbytes/sec] received
+Time taken for tests:   20.059 seconds
+Complete requests:      100000
+Failed requests:        0
+Total transferred:      45595105 bytes
+HTML transferred:       7600000 bytes
+Requests per second:    4985.21 [#/sec] (mean)
+Time per request:       20.059 [ms] (mean)
+Time per request:       0.201 [ms] (mean, across all concurrent requests)
+Transfer rate:          2219.74 [Kbytes/sec] received
 
 Connection Times (ms)
               min  mean[+/-sd] median   max
-Connect:        0    0   0.6      0       9
-Processing:     1   10   2.6     10      35
-Waiting:        1   10   2.6      9      35
-Total:          1   10   2.5     10      35
+Connect:        0    0   0.1      0       3
+Processing:     4   20   3.4     20      52
+Waiting:        1   20   3.4     20      52
+Total:          4   20   3.4     20      52
 
 Percentage of the requests served within a certain time (ms)
-  50%     10
-  66%     11
-  75%     12
-  80%     12
-  90%     13
-  95%     15
-  98%     16
-  99%     18
- 100%     35 (longest request)
-
+  50%     20
+  66%     21
+  75%     22
+  80%     23
+  90%     24
+  95%     26
+  98%     28
+  99%     29
+ 100%     52 (longest request)
 ```
-
-
-从测试数据可以看出，API网关对请求带来了大约4ms的额外延迟，对吞吐量有10%的影响，在一个4VCPU的虚拟机上，可以支撑10k的QPS。
-

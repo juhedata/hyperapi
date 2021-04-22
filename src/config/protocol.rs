@@ -38,19 +38,10 @@ pub struct ServiceInfo {
     pub protocol: String,
     pub auth: AuthSetting,
     pub timeout: u32,
+    pub load_balance: String,
     pub filters: Vec<FilterSetting>,
     pub sla: Vec<ServiceLevel>,
-    pub deployments: Vec<Deployment>,
-}
-
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Deployment {
     pub upstreams: Vec<Upstream>,
-    pub load_balance: String,
-    pub error_threshold: u64,
-    pub error_reset: u64,
-    pub retry_delay: u64,
 }
 
 
@@ -68,6 +59,9 @@ pub struct Upstream {
     pub max_conn: u64,
     pub weight: u32,
     pub version: String,
+    pub error_threshold: u64,
+    pub error_reset: u64,
+    pub retry_delay: u64,
 }
 
 
