@@ -3,7 +3,7 @@ Load Test
 
 测试加入API网关对原有请求路径产生的性能影响。
 
-测试环境为三台阿里云`ecs.sn1.medium`2CPU4G服务器，分别为Nginx挡板机，ab测试机，和API网关测试机
+测试环境为三台阿里云`ecs.c7.large`2CPU4G服务器，分别为Nginx挡板机，ab测试机，和API网关测试机
 
 ## Server setup
 
@@ -21,13 +21,54 @@ apt update
 apt install apache2-utils
 ```
 
-### API Gateway
 
-```bash
-wget https://github.com/juhedata/hyperapi/releases/download/v0.1.0/hyperapi-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-tar zxf hyperapi-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-./hyperapi --config config.yaml --listen 0.0.0.0:9999
+## Nginx静态页基准测试
+
 ```
+root@hyperapi01:~# ab -n 500000 -c 100  http://192.168.0.49/test.html
+This is ApacheBench, Version 2.3 <$Revision: 1843412 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Server Software:        nginx/1.18.0
+Server Hostname:        192.168.0.49
+Server Port:            80
+
+Document Path:          /test.html
+Document Length:        27 bytes
+
+Concurrency Level:      100
+Time taken for tests:   12.901 seconds
+Complete requests:      500000
+Failed requests:        0
+Total transferred:      133500000 bytes
+HTML transferred:       13500000 bytes
+Requests per second:    38756.59 [#/sec] (mean)
+Time per request:       2.580 [ms] (mean)
+Time per request:       0.026 [ms] (mean, across all concurrent requests)
+Transfer rate:          10105.48 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    1   0.2      1       2
+Processing:     1    2   0.5      2      31
+Waiting:        0    1   0.5      1      31
+Total:          1    3   0.4      3      32
+
+Percentage of the requests served within a certain time (ms)
+  50%      3
+  66%      3
+  75%      3
+  80%      3
+  90%      3
+  95%      3
+  98%      3
+  99%      3
+ 100%     32 (longest request)
+ ```
+
+
+ ## hyperapi网关转发测试
 
 config.yaml
 
@@ -40,14 +81,15 @@ services:
       type: AppKey
     timeout: 3
     load_balance: "load"
-    error_threshold: 10
-    error_reset: 60
-    retry_delay: 10
     upstreams:
       - id: 1
         timeout: 3
-        target: "http://192.168.0.95/"
+        target: "http://192.168.0.49/"
         max_conn: 1000
+        weight: 100
+        error_threshold: 10
+        error_reset: 60
+        retry_delay: 10
     filters: []
     sla:
       - name: Default
@@ -70,86 +112,183 @@ clients:
     test/mws: Default
 ```
 
+Install hyperapi and startup
 
-## Nginx静态页基准测试
+```bash
+cargo install hyperapi
+hyperapi --config config.yaml --listen 0.0.0.0:9999
+```
+
+
+Test Result
 
 ```
-root@ab-test:~# ab -n 100000 -c 100 http://192.168.0.95/test.html
+root@hyperapi01:~# ab -n 500000 -c 200  http://192.168.0.48:9999/mws/~9cf3319cbd254202cf882a79a755ba6e/test.html
+This is ApacheBench, Version 2.3 <$Revision: 1843412 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
 Server Software:        nginx/1.18.0
-Server Hostname:        192.168.0.95
-Server Port:            80
-
-Document Path:          /test.html
-Document Length:        76 bytes
-
-Concurrency Level:      100
-Time taken for tests:   5.089 seconds
-Complete requests:      100000
-Failed requests:        0
-Total transferred:      31600000 bytes
-HTML transferred:       7600000 bytes
-Requests per second:    19651.91 [#/sec] (mean)
-Time per request:       5.089 [ms] (mean)
-Time per request:       0.051 [ms] (mean, across all concurrent requests)
-Transfer rate:          6064.46 [Kbytes/sec] received
-
-Connection Times (ms)
-              min  mean[+/-sd] median   max
-Connect:        0    2   0.8      2       3
-Processing:     1    4   0.7      4      10
-Waiting:        0    3   0.8      3       9
-Total:          2    5   0.8      5      12
-
-Percentage of the requests served within a certain time (ms)
-  50%      5
-  66%      5
-  75%      6
-  80%      6
-  90%      6
-  95%      6
-  98%      6
-  99%      7
- 100%     12 (longest request)
- ```
-
-
- ## hyperapi网关转发测试
-
-```
-root@ab-test:~# ab -n 100000 -c 100  http://192.168.0.94:9999/mws/~9cf3319cbd254202cf882a79a755ba6e/test.html
-Server Software:        nginx/1.18.0
-Server Hostname:        192.168.0.94
+Server Hostname:        192.168.0.48
 Server Port:            9999
 
 Document Path:          /mws/~9cf3319cbd254202cf882a79a755ba6e/test.html
-Document Length:        76 bytes
+Document Length:        27 bytes
 
-Concurrency Level:      100
-Time taken for tests:   20.059 seconds
-Complete requests:      100000
+Concurrency Level:      200
+Time taken for tests:   49.196 seconds
+Complete requests:      500000
 Failed requests:        0
-Total transferred:      45595105 bytes
-HTML transferred:       7600000 bytes
-Requests per second:    4985.21 [#/sec] (mean)
-Time per request:       20.059 [ms] (mean)
-Time per request:       0.201 [ms] (mean, across all concurrent requests)
-Transfer rate:          2219.74 [Kbytes/sec] received
+Total transferred:      203475090 bytes
+HTML transferred:       13500000 bytes
+Requests per second:    10163.46 [#/sec] (mean)
+Time per request:       19.678 [ms] (mean)
+Time per request:       0.098 [ms] (mean, across all concurrent requests)
+Transfer rate:          4039.08 [Kbytes/sec] received
 
 Connection Times (ms)
               min  mean[+/-sd] median   max
-Connect:        0    0   0.1      0       3
-Processing:     4   20   3.4     20      52
-Waiting:        1   20   3.4     20      52
-Total:          4   20   3.4     20      52
+Connect:        0    0  11.9      0    1017
+Processing:     2   19   2.4     19     213
+Waiting:        1   19   2.4     19     213
+Total:          4   20  12.2     20    1042
 
 Percentage of the requests served within a certain time (ms)
   50%     20
-  66%     21
-  75%     22
-  80%     23
-  90%     24
-  95%     26
-  98%     28
-  99%     29
- 100%     52 (longest request)
+  66%     20
+  75%     21
+  80%     21
+  90%     22
+  95%     23
+  98%     25
+  99%     26
+ 100%   1042 (longest request)
 ```
+
+
+## kong
+
+config
+
+```yaml
+_format_version: "2.1"
+_transform: true
+services:
+- name: test-service
+  url: http://192.168.0.49
+  plugins:
+  - name: key-auth
+  - name: rate-limiting
+    config:
+      second: 20000
+      policy: local
+  routes:
+  - name: my-route
+    paths:
+    - /test/
+
+consumers:
+- username: my-user
+  keyauth_credentials:
+  - key: my-key
+```
+
+Test Result
+
+```
+root@hyperapi01:~# ab -n 500000 -c 200 -H 'apikey: my-key' http://192.168.0.48:8000/test/test.html
+This is ApacheBench, Version 2.3 <$Revision: 1843412 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Server Software:        nginx/1.18.0
+Server Hostname:        192.168.0.48
+Server Port:            8000
+
+Document Path:          /test/test.html
+Document Length:        27 bytes
+
+Concurrency Level:      200
+Time taken for tests:   52.094 seconds
+Complete requests:      500000
+Failed requests:        0
+Total transferred:      247247589 bytes
+HTML transferred:       13500000 bytes
+Requests per second:    9598.10 [#/sec] (mean)
+Time per request:       20.837 [ms] (mean)
+Time per request:       0.104 [ms] (mean, across all concurrent requests)
+Transfer rate:          4634.98 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.1      0       6
+Processing:     0   21  19.2     20      88
+Waiting:        0   21  19.2     20      88
+Total:          0   21  19.2     21      88
+
+Percentage of the requests served within a certain time (ms)
+  50%     21
+  66%     36
+  75%     37
+  80%     38
+  90%     42
+  95%     47
+  98%     57
+  99%     68
+ 100%     88 (longest request)
+```
+
+
+## EOLinker Goku
+
+开源版本文档严重缺失，基本不可用，未成功运行测试。
+
+
+## APISIX
+
+按照[官网文档](https://apisix.apache.org/docs/apisix/getting-started)，使用docker安装了APISIX网关和APISIX Dashboard.
+
+配置转发到内网Nginx静态页面的服务，开启了apikey认证，和limit-req插件。
+
+```
+root@hyperapi01:~# ab -n 500000 -c 200  -H 'apikey: abcdefg'  http://192.168.0.48:9080/test/test.htmlThis is ApacheBench, Version 2.3 <$Revision: 1843412 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Server Software:        APISIX/2.3
+Server Hostname:        192.168.0.48
+Server Port:            9080
+
+Document Path:          /test/test.html
+Document Length:        27 bytes
+
+Concurrency Level:      200
+Time taken for tests:   53.273 seconds
+Complete requests:      500000
+Failed requests:        0
+Total transferred:      135500000 bytes
+HTML transferred:       13500000 bytes
+Requests per second:    9385.67 [#/sec] (mean)
+Time per request:       21.309 [ms] (mean)
+Time per request:       0.107 [ms] (mean, across all concurrent requests)
+Transfer rate:          2483.90 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.8      0      10
+Processing:     0   21  20.7     14      73
+Waiting:        0   21  20.7     14      73
+Total:          0   21  20.6     17      74
+
+Percentage of the requests served within a certain time (ms)
+  50%     17
+  66%     41
+  75%     42
+  80%     43
+  90%     44
+  95%     45
+  98%     46
+  99%     46
+ 100%     74 (longest request)
+ ```
+
