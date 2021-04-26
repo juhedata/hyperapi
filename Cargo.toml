@@ -44,3 +44,4 @@ tracing-bunyan-formatter = "0.2"
 tracing-appender ="0.1"
 uuid = { version="0.8", features=["v4"] }
 etcd-client = "0.6"
+lru = "0.6"

@@ -1,8 +1,14 @@
 mod service;
+mod authenticator;
+mod jwt;
+mod app_key;
+mod no_auth;
 
-pub use service::{AuthService, AuthRequest, AuthResponse};
-
-
+pub use authenticator::{AuthProvider, ServiceAuthInfo, AuthRequest, AuthResponse, AuthResult};
+pub use service::AuthService;
+pub use app_key::AppKeyAuthProvider;
+pub use jwt::JWTAuthProvider;
+pub use no_auth::NoAuthProvider;
 
 #[cfg(test)]
 mod tests {
@@ -13,12 +19,12 @@ mod tests {
     use hyper::{Body, Request};
     use std::time::{Duration, SystemTime};
     use jsonwebtoken as jwt;
-    use crate::auth::service::JwtClaims;
+    use crate::auth::jwt::JwtClaims;
 
 
     fn gen_jwt_token(user_id: &str, sign_key: &str) -> String {
         let ts = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
-        let claims = service::JwtClaims {
+        let claims = JwtClaims {
             sub: user_id.to_owned(),
             exp: (ts + Duration::from_secs(3600)).as_secs(),
             iat: None,
@@ -33,7 +39,7 @@ mod tests {
         token.unwrap()
     }
 
-    fn verify_jwt_token(token: &str, verify_key: &str) -> Option<service::JwtClaims> {
+    fn verify_jwt_token(token: &str, verify_key: &str) -> Option<JwtClaims> {
         //let vk = base64::decode_config(verify_key, base64::URL_SAFE).unwrap();
         let pub_key = jwt::DecodingKey::from_ec_pem(verify_key.as_bytes()).unwrap();
         let validation = jwt::Validation::new(jwt::Algorithm::ES256);

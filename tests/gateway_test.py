@@ -186,8 +186,7 @@ def run_test():
     import requests
     import time
 
-    
-    gateway = subprocess.Popen(["../target/debug/hyperapi", "--listen", "127.0.0.1:8888", "--config", "sample_config.yaml"], stdout=subprocess.DEVNULL)
+    gateway = subprocess.Popen(["../target/debug/hyperapi", "--listen", "127.0.0.1:8888", "--config", "sample_config.yaml"])
     fastapi = subprocess.Popen(["uvicorn", "--port", "9999", "gateway_test:app"])
     time.sleep(3)
     
