@@ -1,6 +1,6 @@
 use crate::middleware::weighted::WeightedBalance;
 use hyper::{Request, Response, Body, StatusCode};
-use hyper::header::{HeaderName, HeaderValue};
+use hyper::header::HeaderValue;
 use tokio::sync::mpsc;
 use std::time::Duration;
 use std::collections::HashMap;
@@ -45,13 +45,8 @@ impl UpstreamMiddleware {
 
         let mut service = Self::build_service(&conf);
 
-        while let Some(MwPreRequest {context, mut request, result, .. }) = rx.recv().await {
+        while let Some(MwPreRequest {context, request, result, .. }) = rx.recv().await {
             event!(Level::DEBUG, "request {:?}", request.uri());
-            let header_key = HeaderName::from_static("x-client-id");
-            let header_val = HeaderValue::from_str(&context.client_id).unwrap();
-            let header = request.headers_mut();
-            header.insert(header_key, header_val);
-
             if let Ok(px) = service.ready().await {
                 let f = px.call(request);
                 tokio::spawn(async move {
@@ -119,7 +114,10 @@ impl UpstreamMiddleware {
                     let list: Vec<LoadShed<Constant<CircuitBreakerService<LoadShed<ConcurrencyLimit<ProxyHandler>>>, u32>>> = list.into_iter().map(|s| LoadShed::new(s)).collect();
                     let balance = Steer::new(list, |req: &Request<_>, s: &[_]| {
                         let total = s.len();
-                        let client_id = req.headers().get("x-client-id").unwrap().as_bytes();
+                        let default = HeaderValue::from_static("empty");
+                        let client_id = req.headers().get("x-lb-hash")
+                                    .unwrap_or(&default)
+                                    .as_bytes();
                         let mut hasher = DefaultHasher::new();
                         Hash::hash_slice(&client_id, &mut hasher);
                         (hasher.finish() as usize) % total

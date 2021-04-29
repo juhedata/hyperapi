@@ -129,6 +129,7 @@ async def test_load_balance():
     print("=============TESTING LOAD BALANCE=========================")
     headers = {
         'X-APP-KEY': "9cf3319cbd254202cf882a79a755ba6e",
+        'X-LB-HASH': "test",
     }
     async with AsyncClient(base_url="http://localhost:8888") as ac:
         print('------------test random lb------------')
