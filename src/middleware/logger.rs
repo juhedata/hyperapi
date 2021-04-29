@@ -1,4 +1,4 @@
-use hyper::{Body, Response, Request};
+use hyper::{Body, Request, Response, http::HeaderValue};
 use std::{pin::Pin, time::{SystemTime, UNIX_EPOCH}};
 use std::future::Future;
 use crate::middleware::{MwPostRequest, MwPreRequest, MwPostResponse, MwPreResponse, Middleware};
@@ -10,12 +10,12 @@ lazy_static::lazy_static! {
     static ref HTTP_COUNTER: prometheus::IntCounterVec = prometheus::register_int_counter_vec!(
         "gateway_requests_total",
         "Number of HTTP requests.",
-        &["service", "app", "upstream", "status_code", "path"]
+        &["service", "app", "upstream", "version", "status_code", "path"]
     ).unwrap();
     static ref HTTP_REQ_DURATION_HIST: prometheus::HistogramVec = prometheus::register_histogram_vec!(
         "gateway_request_duration_seconds",
         "Request latency histgram",
-        &["service", "app", "upstream"],
+        &["service", "app", "upstream", "version"],
         vec![0.01, 0.05, 0.25, 1.0, 5.0]
     ).unwrap();
 
@@ -108,20 +108,17 @@ impl Middleware for LoggerMiddleware {
     fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
         let MwPostRequest {context, response, service_filters: _, client_filters: _, result} = task;
         let status = response.status().as_u16().to_string();
-        let upstream = {
-            if let Some(us) = response.headers().get("X-UPSTREAM-ID") {
-                us.to_str().unwrap_or("")
-            } else {
-                ""
-            }
-        };
-
+        let empty_value = HeaderValue::from_static("");
+        let upstream = response.headers().get("X-UPSTREAM-ID").unwrap_or(&empty_value).to_str().unwrap();
+        let version = response.headers().get("X-UPSTREAM-VERSION").unwrap_or(&empty_value).to_str().unwrap();
+        
         if let Ok(start_time) = context.args.get("TS").unwrap().parse::<f64>() {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
             HTTP_REQ_DURATION_HIST.with_label_values(&[
                 &context.service_id,
                 &context.client_id,
                 upstream,
+                version,
             ]).observe(now.as_secs_f64() - start_time);
         }
 
@@ -130,6 +127,7 @@ impl Middleware for LoggerMiddleware {
             &context.service_id, 
             &context.client_id, 
             upstream, 
+            version,
             &status, 
             &path,
         ]).inc_by(1);

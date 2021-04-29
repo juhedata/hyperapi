@@ -17,7 +17,7 @@ lazy_static::lazy_static! {
     static ref HTTP_REQ_INPROGRESS: prometheus::IntGaugeVec = prometheus::register_int_gauge_vec!(
         "gateway_requests_in_progress",
         "Request in progress count",
-        &["service", "upstream"]
+        &["service", "upstream", "version"]
     ).unwrap();
 
 }
@@ -28,6 +28,7 @@ pub struct ProxyHandler {
     service_id: String,
     upstream_id: String,
     upstream: String,
+    version: String,
     timeout: Duration,
     client: Client<HttpsConnector<HttpConnector>, Body>,
 }
@@ -64,6 +65,7 @@ impl ProxyHandler {
             timeout,
             upstream: upstream.target.clone(), 
             upstream_id: upstream.id.clone(),
+            version: upstream.version.clone(),
         }
     }
 
@@ -100,10 +102,12 @@ impl Service<Request<Body>> for ProxyHandler
         let req = ProxyHandler::alter_request(req, &self.upstream);
         event!(Level::DEBUG, "{:?}", req.uri());
         let upstream_id = self.upstream_id.to_string();
+        let version = self.version.to_string();
         let service_id = self.service_id.clone();
         HTTP_REQ_INPROGRESS.with_label_values(&[
             &service_id, 
             &upstream_id,
+            &version,
         ]).inc();
         let sleep = tokio::time::sleep(self.timeout.clone());
         let fut = self.client.request(req);
@@ -122,8 +126,10 @@ impl Service<Request<Body>> for ProxyHandler
             ]).dec();
             if let Ok(mut resp) = result {
                 let header = resp.headers_mut();
-                let header_value = HeaderValue::from_str(&upstream_id).unwrap();
-                header.append("X-UPSTREAM-ID", header_value);
+                let us_id = HeaderValue::from_str(&upstream_id).unwrap();
+                let us_version = HeaderValue::from_str(&version).unwrap();
+                header.append("X-UPSTREAM-ID", us_id);
+                header.append("X-UPSTREAM-VERSION", us_version);
                 Ok(resp)
             } else {
                 let err = Response::builder()
