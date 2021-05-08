@@ -1,12 +1,19 @@
 stages:
+  - build
   - test
   - release
 
-pytest:
+prepare:
+  stage: build
+  tags:
+    - fastapi
+  script: "pyenv activate py38 && pip install -r tests/requirements.txt"
+
+gateway_test:
   stage: test
   tags:
     - fastapi
-  script: "cargo test"
+  script: "cargo build && cargo test && cd tests/ && pyenv activate py38 && python gateway_test.py"
 
 cargo_build:
   stage: release

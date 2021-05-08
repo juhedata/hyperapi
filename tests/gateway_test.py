@@ -5,6 +5,9 @@ from datetime import datetime
 from mock_server import app, queue
 import asyncio
 
+gateway_port = 54321
+mock_port = 54320
+
 
 @app.get("/test1")
 async def test_appkey_service():
@@ -13,7 +16,7 @@ async def test_appkey_service():
         'Authorization': "toberemoved",
         'X-APP-KEY': "9cf3319cbd254202cf882a79a755ba6e",
     }
-    async with AsyncClient(base_url="http://localhost:8888") as ac:
+    async with AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
         # test header modification
         url = "/mws/api/user/hello"
         resp = await ac.get(url, headers=headers)
@@ -68,7 +71,7 @@ async def test_jwt_service():
     headers = {
         "Authorization": f"Bearer {token}",
     }
-    async with AsyncClient(base_url="http://localhost:8888") as ac:
+    async with AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
         print('--------------test jwt auth')
         url = "/upstream/error/400"
         resp = await ac.get(url, headers=headers)
@@ -131,7 +134,7 @@ async def test_load_balance():
         'X-APP-KEY': "9cf3319cbd254202cf882a79a755ba6e",
         'X-LB-HASH': "test",
     }
-    async with AsyncClient(base_url="http://localhost:8888") as ac:
+    async with AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
         print('------------test random lb------------')
         url = "/lb1/error/200"
         counter = defaultdict(int)
@@ -187,21 +190,21 @@ def run_test():
     import requests
     import time
 
-    gateway = subprocess.Popen(["../target/debug/hyperapi", "--listen", "127.0.0.1:8888", "--config", "sample_config.yaml"])
-    fastapi = subprocess.Popen(["uvicorn", "--port", "9999", "gateway_test:app"])
+    gateway = subprocess.Popen(["../target/debug/hyperapi", "--listen", f"127.0.0.1:{gateway_port}", "--config", "sample_config.yaml"])
+    fastapi = subprocess.Popen(["uvicorn", "--port", f"{mock_port}", "gateway_test:app"])
     time.sleep(3)
     
     try:
         print("request test endpoint, middleware test, appkey auth")
-        resp = requests.get("http://localhost:9999/test1")
+        resp = requests.get(f"http://localhost:{mock_port}/test1")
         assert resp.status_code == 200
 
         print("request test endpoint, upstream test, jwt auth")
-        resp = requests.get("http://localhost:9999/test2")
+        resp = requests.get(f"http://localhost:{mock_port}/test2")
         assert resp.status_code == 200
 
         print("request test endpoint, load balance test, appkey auth")
-        resp = requests.get("http://localhost:9999/test3")
+        resp = requests.get(f"http://localhost:{mock_port}/test3")
         assert resp.status_code == 200
     finally:
         gateway.kill()

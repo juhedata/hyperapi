@@ -12,7 +12,7 @@ services:
         retry_delay: 10
         weight: 100
         id: 1
-        target: "http://127.0.0.1:9999/"
+        target: "http://127.0.0.1:54320/"
         max_conn: 100
         version: "1.0"
     filters:
@@ -62,7 +62,7 @@ services:
         retry_delay: 3
         weight: 100
         id: 2
-        target: "http://127.0.0.1:9999/"
+        target: "http://127.0.0.1:54320/"
         max_conn: 10
         version: "1.0"
     filters: []
@@ -85,7 +85,7 @@ services:
     upstreams:
       - id: 11
         timeout: 10
-        target: "http://127.0.0.1:9999/"
+        target: "http://127.0.0.1:54320/"
         max_conn: 100
         version: "1.0"
         weight: 100
@@ -94,7 +94,7 @@ services:
         retry_delay: 10
       - id: 12
         timeout: 10
-        target: "http://127.0.0.1:9999/"
+        target: "http://127.0.0.1:54320/"
         max_conn: 100
         version: "1.0"
         weight: 10
@@ -121,7 +121,7 @@ services:
     upstreams:
       - id: 21
         timeout: 10
-        target: "http://127.0.0.1:9999/"
+        target: "http://127.0.0.1:54320/"
         max_conn: 100
         version: "1.0"
         weight: 100
@@ -130,7 +130,7 @@ services:
         retry_delay: 10
       - id: 22
         timeout: 10
-        target: "http://127.0.0.1:9999/"
+        target: "http://127.0.0.1:54320/"
         max_conn: 100
         version: "1.0"
         weight: 10
@@ -157,7 +157,7 @@ services:
     upstreams:
       - id: 31
         timeout: 10
-        target: "http://127.0.0.1:9999/random/0.1"
+        target: "http://127.0.0.1:54320/random/0.1"
         max_conn: 100
         version: "1.0"
         weight: 100
@@ -166,7 +166,7 @@ services:
         retry_delay: 10
       - id: 32
         timeout: 10
-        target: "http://127.0.0.1:9999/random/0.2"
+        target: "http://127.0.0.1:54320/random/0.2"
         max_conn: 100
         version: "1.0"
         weight: 10
@@ -193,7 +193,7 @@ services:
     upstreams:
       - id: 41
         timeout: 10
-        target: "http://127.0.0.1:9999/random/0.1"
+        target: "http://127.0.0.1:54320/random/0.1"
         max_conn: 100
         version: "1.0"
         weight: 100
@@ -202,7 +202,7 @@ services:
         retry_delay: 10
       - id: 42
         timeout: 10
-        target: "http://127.0.0.1:9999/random/0.2"
+        target: "http://127.0.0.1:54320/random/0.2"
         max_conn: 100
         version: "1.0"
         weight: 10
