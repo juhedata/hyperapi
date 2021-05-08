@@ -1,4 +1,4 @@
-from httpx import AsyncClient
+import httpx
 import jwt
 from collections import defaultdict
 from datetime import datetime
@@ -16,7 +16,7 @@ async def test_appkey_service():
         'Authorization': "toberemoved",
         'X-APP-KEY': "9cf3319cbd254202cf882a79a755ba6e",
     }
-    async with AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
+    async with httpx.AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
         # test header modification
         url = "/mws/api/user/hello"
         resp = await ac.get(url, headers=headers)
@@ -71,7 +71,7 @@ async def test_jwt_service():
     headers = {
         "Authorization": f"Bearer {token}",
     }
-    async with AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
+    async with httpx.AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
         print('--------------test jwt auth')
         url = "/upstream/error/400"
         resp = await ac.get(url, headers=headers)
@@ -134,7 +134,7 @@ async def test_load_balance():
         'X-APP-KEY': "9cf3319cbd254202cf882a79a755ba6e",
         'X-LB-HASH': "test",
     }
-    async with AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
+    async with httpx.AsyncClient(base_url=f"http://localhost:{gateway_port}") as ac:
         print('------------test random lb------------')
         url = "/lb1/error/200"
         counter = defaultdict(int)
@@ -175,8 +175,9 @@ async def test_load_balance():
 
     return {"result": "Pass"}
 
+
 async def runner(ac, url, headers, counts):
-    counter = counter = defaultdict(list)
+    counter = defaultdict(list)
     for i in range(counts):
         start = datetime.now().timestamp()
         resp = await ac.get(url, headers=headers)
@@ -185,9 +186,9 @@ async def runner(ac, url, headers, counts):
         counter[upstream].append(end - start)
     return counter
 
+
 def run_test():
     import subprocess
-    import requests
     import time
 
     gateway = subprocess.Popen(["../target/debug/hyperapi", "--listen", f"127.0.0.1:{gateway_port}", "--config", "sample_config.yaml"])
@@ -196,15 +197,15 @@ def run_test():
     
     try:
         print("request test endpoint, middleware test, appkey auth")
-        resp = requests.get(f"http://localhost:{mock_port}/test1")
+        resp = httpx.get(f"http://localhost:{mock_port}/test1", timeout=None)
         assert resp.status_code == 200
 
         print("request test endpoint, upstream test, jwt auth")
-        resp = requests.get(f"http://localhost:{mock_port}/test2")
+        resp = httpx.get(f"http://localhost:{mock_port}/test2", timeout=None)
         assert resp.status_code == 200
 
         print("request test endpoint, load balance test, appkey auth")
-        resp = requests.get(f"http://localhost:{mock_port}/test3")
+        resp = httpx.get(f"http://localhost:{mock_port}/test3", timeout=None)
         assert resp.status_code == 200
     finally:
         gateway.kill()
