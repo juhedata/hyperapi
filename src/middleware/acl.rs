@@ -1,12 +1,14 @@
-use hyper::{Request, Body, StatusCode, Response};
+use hyper::{Request, Body};
 use regex::Regex;
 use tracing::{event, Level};
 use std::{collections::HashMap, str::FromStr};
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
-use crate::middleware::{MwPostRequest, MwPreRequest, MwPreResponse, Middleware};
+use crate::middleware::{MwPostRequest, MwPreRequest, MwPreResponse, Middleware, MwNextAction};
 use crate::config::{ConfigUpdate, FilterSetting, ACLSetting};
+
+use super::middleware::GatewayError;
 
 
 #[derive(Debug)]
@@ -46,15 +48,10 @@ impl Middleware for ACLMiddleware {
             }
         }
         if pass {
-            let response = MwPreResponse {context: context, request: Some(request), response: None };
-            let _ = result.send(response);
+            let pre_resp = MwPreResponse {context: context, next: MwNextAction::Next(request) };
+            let _ = result.send(Ok(pre_resp));
         } else {
-            let err = Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::from("404 Not Found"))
-                .unwrap();
-            let response = MwPreResponse { context, request: Some(request), response: Some(err) };
-            let _ = result.send(response);
+            let _ = result.send(Err(GatewayError::AccessBlocked("Not Found".into())));
         }
         Box::pin(async {})
     }

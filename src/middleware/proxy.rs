@@ -1,4 +1,4 @@
-use hyper::{Body, Request, Response, Uri, header::HeaderValue, StatusCode};
+use hyper::{Body, Request, Response, Uri, header::HeaderValue};
 use hyper::client::HttpConnector;
 use hyper::client::Client;
 use hyper_rustls::HttpsConnector;
@@ -9,7 +9,7 @@ use std::task::{Poll, Context};
 use std::future::Future;
 use std::time::Duration;
 use tracing::{event, Level};
-use crate::config::Upstream;
+use crate::{config::Upstream, middleware::GatewayError};
 
 
 lazy_static::lazy_static! {
@@ -91,7 +91,7 @@ impl ProxyHandler {
 impl Service<Request<Body>> for ProxyHandler
 {
     type Response = Response<Body>;
-    type Error = anyhow::Error;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
     type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _c: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -109,36 +109,32 @@ impl Service<Request<Body>> for ProxyHandler
             &upstream_id,
             &version,
         ]).inc();
+
         let sleep = tokio::time::sleep(self.timeout.clone());
         let fut = self.client.request(req);
         Box::pin(async move {
-            let result = tokio::select! {
+            let result: Result<Response<Body>, GatewayError> = tokio::select! {
                 resp = fut => {
-                    resp.map_err(|e| e.into())
+                    Ok(resp?)
                 },
                 _ = sleep => {
-                    Err(anyhow::anyhow!("Request Timeout"))
+                    Err(GatewayError::TimeoutError)
                 },
             };
+
             HTTP_REQ_INPROGRESS.with_label_values(&[
                 &service_id,
                 &upstream_id,
                 &version,
             ]).dec();
-            if let Ok(mut resp) = result {
-                let header = resp.headers_mut();
-                let us_id = HeaderValue::from_str(&upstream_id).unwrap();
-                let us_version = HeaderValue::from_str(&version).unwrap();
-                header.append("X-UPSTREAM-ID", us_id);
-                header.append("X-UPSTREAM-VERSION", us_version);
-                Ok(resp)
-            } else {
-                let err = Response::builder()
-                    .status(StatusCode::BAD_GATEWAY)
-                    .body(Body::from(format!("Error request upstream: {:?}", result)))
-                    .unwrap();
-                Ok(err)
-            }
+
+            let mut resp = result?;
+            let header = resp.headers_mut();
+            let us_id = HeaderValue::from_str(&upstream_id).unwrap();
+            let us_version = HeaderValue::from_str(&version).unwrap();
+            header.append("X-UPSTREAM-ID", us_id);
+            header.append("X-UPSTREAM-VERSION", us_version);
+            Ok(resp)
         })
     }
 }

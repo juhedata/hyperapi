@@ -1,5 +1,5 @@
 use crate::middleware::weighted::WeightedBalance;
-use hyper::{Request, Response, Body, StatusCode};
+use hyper::{Request, Response, Body};
 use hyper::header::HeaderValue;
 use tokio::sync::mpsc;
 use std::time::Duration;
@@ -17,7 +17,7 @@ use std::pin::Pin;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use crate::config::{ConfigUpdate, ServiceInfo};
-use crate::middleware::{Middleware, MwPreRequest, MwPreResponse, MwPostRequest};
+use crate::middleware::{Middleware, MwPreRequest, MwPreResponse, MwPostRequest, MwNextAction, GatewayError};
 use crate::middleware::proxy::ProxyHandler;
 use tracing::{event, Level};
 use crate::middleware::{CircuitBreakerConfig, CircuitBreakerService};
@@ -53,27 +53,21 @@ impl UpstreamMiddleware {
                     let proxy_resp: Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>>  = f.await;
                     match proxy_resp {
                         Ok(resp) => {
-                            let response = MwPreResponse { context, request: None, response: Some(resp) };
-                            let _ = result.send(response);
+                            let response = MwPreResponse { context, next: MwNextAction::Return(resp) };
+                            let _ = result.send(Ok(response));
                         },
                         Err(e) => {
-                            let msg = format!("Gateway error\n{:?}", e);
-                            let err = Response::builder()
-                                .status(StatusCode::BAD_GATEWAY)
-                                .body(Body::from(msg))
-                                .unwrap();
-                            let response = MwPreResponse { context, request: None, response: Some(err) };
-                            let _ = result.send(response);
+                            if let Some(err) = e.downcast_ref::<GatewayError>() {
+                                let _ = result.send(Err(err.clone()));
+                            } else {
+                                let msg = format!("Upstream error\n{:?}", e);
+                                let _ = result.send(Err(GatewayError::UpstreamError(msg)));
+                            }
                         },
                     }
                 });
             } else {
-                let err = Response::builder()
-                                .status(StatusCode::BAD_GATEWAY)
-                                .body(Body::from("Service not ready"))
-                                .unwrap();
-                let response = MwPreResponse { context, request: None, response: Some(err) };
-                let _ = result.send(response);
+                let _ = result.send(Err(GatewayError::ServiceNotReady("Service not ready".into())));
             }
         }
     }
@@ -166,16 +160,7 @@ impl Middleware for UpstreamMiddleware {
             })
         } else {
             Box::pin(async {
-                let err= Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::from("Invalid Service Id"))
-                    .unwrap();
-                let resp = MwPreResponse { 
-                    context: task.context, 
-                    request: Some(task.request), 
-                    response: Some(err),
-                 };
-                let _ = task.result.send(resp);
+                let _ = task.result.send(Err(GatewayError::ServiceNotFound("Invalid Service ID".into())));
             })
         }
     }

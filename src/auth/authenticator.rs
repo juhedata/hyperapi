@@ -2,12 +2,33 @@ use std::collections::HashMap;
 use hyper::http::request::Parts;
 use tokio::sync::oneshot;
 use crate::config::{ConfigUpdate, FilterSetting, AuthSetting};
+use thiserror::Error;
+
+
+#[derive(Error, Debug, Clone)]
+pub enum GatewayAuthError { 
+    #[error("Unknown Service")]
+    UnknownService,
+
+    #[error("Unknown Client")]
+    UnknownClient,
+
+    #[error("Invalid SLA")]
+    InvalidSLA,
+
+    #[error("Invalid auth token")]
+    InvalidToken,
+
+    #[error("Auth token not found")]
+    TokenNotFound,
+
+    #[error("Unknown auth error")]
+    Unknown,
+}
 
 
 #[derive(Debug, Clone)]
 pub struct AuthResponse {
-    pub success: bool,
-    pub error: String,
     pub client_id: String,
     pub service_id: String,
     pub sla: String,
@@ -18,12 +39,11 @@ pub struct AuthResponse {
 
 pub struct AuthRequest {
     pub head: Parts,
-    pub result: oneshot::Sender<(Parts, AuthResponse)>,
+    pub result: oneshot::Sender<Result<(Parts, AuthResponse), GatewayAuthError>>,
 }
 
-
 impl AuthRequest {
-    pub fn into_parts(self) -> (Parts, oneshot::Sender<(Parts, AuthResponse)>) {
+    pub fn into_parts(self) -> (Parts, oneshot::Sender<Result<(Parts, AuthResponse), GatewayAuthError>>) {
         (self.head, self.result)
     }
 }
@@ -48,6 +68,6 @@ pub trait AuthProvider {
 
     fn update_config(&mut self, update: ConfigUpdate);
 
-    fn identify_client(&self, client: Parts, service_id: &str) -> (Parts, Result<AuthResult, String>);
+    fn identify_client(&self, client: Parts, service_id: &str) -> Result<(Parts, AuthResult), GatewayAuthError>;
 }
 

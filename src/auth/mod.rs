@@ -4,7 +4,7 @@ mod jwt;
 mod app_key;
 mod no_auth;
 
-pub use authenticator::{AuthProvider, ServiceAuthInfo, AuthRequest, AuthResponse, AuthResult};
+pub use authenticator::{AuthProvider, ServiceAuthInfo, AuthRequest, AuthResponse, AuthResult, GatewayAuthError};
 pub use service::AuthService;
 pub use app_key::AppKeyAuthProvider;
 pub use jwt::JWTAuthProvider;
@@ -192,7 +192,7 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             // get response
             let result = rx.await;
             assert!(result.is_ok());
-            let (_parts, resp) = result.unwrap();
+            let (_parts, resp) = result.unwrap().unwrap();
             println!("{:?}", resp);
             assert!(resp.service_id.eq("leric/test"));
             assert!(resp.client_id.eq("leric/app"));
@@ -211,9 +211,8 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             // get response
             let result = rx.await;
             assert!(result.is_ok());
-            let (_parts, resp) = result.unwrap();
+            let (_parts, resp) = result.unwrap().unwrap();
             println!("{:?}", resp);
-            assert!(!resp.success);
         }
 
         // send request to /test1
@@ -232,9 +231,8 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
             // get response
             let result = rx.await;
             assert!(result.is_ok());
-            let (_parts, resp) = result.unwrap();
+            let (_parts, resp) = result.unwrap().unwrap();
             println!("{:?}", resp);
-            assert!(resp.success);
         }
 
         handler.abort();
