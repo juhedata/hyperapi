@@ -187,21 +187,23 @@ def run_test():
     import requests
     import time
 
-    gateway = subprocess.Popen(["../target/debug/hyperapi", "--listen", "127.0.0.1:8888", "--config", "sample_config.yaml"])
-    fastapi = subprocess.Popen(["uvicorn", "--port", "9999", "gateway_test:app"])
+    gateway_port = 54321
+    gateway = subprocess.Popen(["../target/debug/hyperapi", "--listen", f"127.0.0.1:{gateway_port}", "--config", "sample_config.yaml"])
+    mock_port = 54320
+    fastapi = subprocess.Popen(["uvicorn", "--port", f"{mock_port}", "gateway_test:app"])
     time.sleep(3)
     
     try:
         print("request test endpoint, middleware test, appkey auth")
-        resp = requests.get("http://localhost:9999/test1")
+        resp = requests.get(f"http://localhost:{mock_port}/test1")
         assert resp.status_code == 200
 
         print("request test endpoint, upstream test, jwt auth")
-        resp = requests.get("http://localhost:9999/test2")
+        resp = requests.get(f"http://localhost:{mock_port}/test2")
         assert resp.status_code == 200
 
         print("request test endpoint, load balance test, appkey auth")
-        resp = requests.get("http://localhost:9999/test3")
+        resp = requests.get(f"http://localhost:{mock_port}/test3")
         assert resp.status_code == 200
     finally:
         gateway.kill()
