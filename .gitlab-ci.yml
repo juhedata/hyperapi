@@ -7,7 +7,7 @@ prepare:
   stage: build
   tags:
     - fastapi
-  script: "pyenv activate py38 && pip install -r requirements.txt"
+  script: "pyenv activate py38 && pip install -r tests/requirements.txt"
 
 gateway_test:
   stage: test
