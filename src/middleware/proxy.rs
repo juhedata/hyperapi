@@ -123,6 +123,7 @@ impl Service<Request<Body>> for ProxyHandler
             HTTP_REQ_INPROGRESS.with_label_values(&[
                 &service_id,
                 &upstream_id,
+                &version,
             ]).dec();
             if let Ok(mut resp) = result {
                 let header = resp.headers_mut();
