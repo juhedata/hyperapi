@@ -16,7 +16,7 @@ lazy_static::lazy_static! {
         "gateway_request_duration_seconds",
         "Request latency histgram",
         &["service", "app", "upstream", "version"],
-        vec![0.01, 0.05, 0.25, 1.0, 5.0]
+        vec![0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 3.0]
     ).unwrap();
 
 }

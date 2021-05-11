@@ -140,7 +140,7 @@ UvDujXtya49q5/2wE4diZfEqNBEoftro49fWdtRfTWZgv64vt0j26OOX5Q==
                 FilterSetting::ACL(ACLSetting {
                     access_control: String::from("allow"),
                     paths: vec![
-                        PathMatcher { methods: String::from("GET"), path_regex: String::from(".*") },
+                        PathMatcher { methods: String::from("GET"), path_pattern: String::from("*") },
                     ],
                 }),
             ],

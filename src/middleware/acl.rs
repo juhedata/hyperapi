@@ -1,12 +1,12 @@
 use hyper::{Request, Body, StatusCode, Response};
-use regex::Regex;
 use tracing::{event, Level};
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap};
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use crate::middleware::{MwPostRequest, MwPreRequest, MwPreResponse, Middleware};
 use crate::config::{ConfigUpdate, FilterSetting, ACLSetting};
+use glob::Pattern;
 
 
 #[derive(Debug)]
@@ -96,7 +96,7 @@ impl Middleware for ACLMiddleware {
 #[derive(Debug, Clone)]
 pub struct ACLMatcher{
     on_match: bool,
-    paths: Vec<(Regex, HashSet<String>)>,
+    paths: Vec<(Pattern, HashSet<String>)>,
 }
 
 
@@ -107,14 +107,20 @@ impl ACLMatcher {
         let mut paths = Vec::new();
         for p in &setting.paths {
             let mut methodset: HashSet<String> = HashSet::new();
-            let msplit = p.methods.split(",");
+            let msplit = {
+                if p.methods.eq("*") {
+                    vec!["GET", "POST", "DELETE", "PUT", "OPTIONS", "PATCH"]
+                } else {
+                    p.methods.split(",").collect()
+                }
+            };
             for m in msplit {
                 methodset.insert(String::from(m));
             }
-            if let Ok(regex) = Regex::from_str(&p.path_regex) {
-                paths.push((regex, methodset));
+            if let Ok(pattern) = Pattern::new(&p.path_pattern) {
+                paths.push((pattern, methodset));
             } else {
-                event!(Level::ERROR, "bad regex {}", p.path_regex);
+                event!(Level::ERROR, "bad path glob pattern {}", p.path_pattern);
             }
         }
         ACLMatcher { on_match, paths }
@@ -125,10 +131,10 @@ impl ACLMatcher {
         let path = req.uri().path();
         let path = path.strip_prefix("/").unwrap_or(path);
 
-        for (path_regex, methodset) in &self.paths {
+        for (pattern, methodset) in &self.paths {
             if methodset.contains(method) {
                 let (_sid, path_left) = path.split_at(path.find("/").unwrap_or(0));
-                if path_regex.is_match(path_left) {
+                if pattern.matches(path_left) {
                     return self.on_match
                 }
             }

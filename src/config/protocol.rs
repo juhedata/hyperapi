@@ -91,7 +91,7 @@ pub struct ACLSetting {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PathMatcher {
     pub methods: String,
-    pub path_regex: String,
+    pub path_pattern: String,
 }
 
 

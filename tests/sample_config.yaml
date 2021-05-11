@@ -36,9 +36,9 @@ services:
           access_control: "allow"
           paths:
             - methods: "GET,POST,DELETE,PUT,OPTIONS,PATCH"
-              path_regex: "/api/user.*"
+              path_pattern: "/api/user*"
             - methods: "GET"
-              path_regex: "/error.*"
+              path_pattern: "/error*"
 
     sla:
       - name: Default

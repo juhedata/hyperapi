@@ -27,7 +27,7 @@ services:
         access_control: allow
         paths:
           - methods: POST
-            path_regex: /api.*
+            path_pattern: /api/*
     sla:
       - name: Default
         filters:
