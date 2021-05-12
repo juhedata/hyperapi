@@ -1,11 +1,59 @@
-use std::{collections::HashMap, pin::Pin};
-use hyper::{Request, Response, Body, StatusCode};
+use std::{collections::HashMap, pin::Pin, time::SystemTime};
+use hyper::{Request, Response, Body};
+use tokio::sync::oneshot::error::RecvError;
 use tokio::sync::{mpsc, broadcast};
 use tokio::sync::oneshot;
 use std::future::Future;
 use tracing::{span, Level, Instrument};
 use crate::{auth::AuthResponse, config::ConfigUpdate, config::FilterSetting};
 use uuid::Uuid;
+use thiserror::Error;
+
+
+#[derive(Error, Debug, Clone)]
+pub enum GatewayError {
+    #[error("Upstream request timeout")]
+    TimeoutError,
+
+    #[error("Service not found")]
+    ServiceNotFound(String),
+
+    #[error("Service not ready")]
+    ServiceNotReady(String),
+
+    #[error("Upstream error")]
+    UpstreamError(String),
+
+    #[error("Rate Limit")]
+    RateLimited(String),
+
+    #[error("URL Access Deny")]
+    AccessBlocked(String),
+
+    #[error("Interal server error")]
+    GatewayInteralError(String),
+
+    #[error("Middleware comm error")]
+    ChannelRecvError(String),
+
+    #[error("Unknown auth error")]
+    Unknown,
+}
+
+impl From<hyper::Error> for GatewayError {
+    fn from(e: hyper::Error) -> Self {
+        let msg = format!("Upstream service error: {:?}", e);
+        GatewayError::UpstreamError(msg.into())
+    }
+}
+
+impl From<RecvError> for GatewayError {
+    fn from(e: RecvError) -> Self {
+        let msg = format!("Internal comm error: {:?}", e);
+        GatewayError::ChannelRecvError(msg.into())
+    }
+}
+
 
 #[derive(Clone)]
 pub struct MiddlewareHandle {
@@ -23,17 +71,21 @@ pub struct MwPreRequest {
     pub request: Request<Body>,
     pub service_filters: Vec<FilterSetting>,
     pub client_filters: Vec<FilterSetting>,
-    pub result: oneshot::Sender<MwPreResponse>,
+    pub result: oneshot::Sender<Result<MwPreResponse, GatewayError>>,
 }
 
 
 #[derive(Debug)]
 pub struct MwPreResponse {
     pub context: RequestContext,
-    pub request: Option<Request<Body>>,
-    pub response: Option<Response<Body>>,
+    pub next: MwNextAction,
 }
 
+#[derive(Debug)]
+pub enum MwNextAction {
+    Next(Request<Body>),
+    Return(Response<Body>),
+}
 
 #[derive(Debug)]
 pub struct MwPostRequest {
@@ -41,7 +93,7 @@ pub struct MwPostRequest {
     pub response: Response<Body>,
     pub service_filters: Vec<FilterSetting>,
     pub client_filters: Vec<FilterSetting>,
-    pub result: oneshot::Sender<MwPostResponse>,
+    pub result: oneshot::Sender<Result<MwPostResponse, GatewayError>>,
 }
 
 
@@ -62,22 +114,28 @@ pub enum MiddlewareRequest {
 pub trait Middleware {
     fn name() -> String;
 
+    // this middleware intercept request 
     fn pre() -> bool {
         true
     }
 
+    // this middleware handles response
     fn post() -> bool {
         true
     }
 
+    // this middlewares requires setting to work
     fn require_setting() -> bool {
         true
     }
 
+    // pre-request handler, result is sent-back through one-shot channel in MwPreRequest
     fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>>;
 
+    // post-response handler, result is sent-back through one-shot channel in MwPostRequest
     fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>>;
 
+    // handle config update events
     fn config_update(&mut self, update: ConfigUpdate);
 }
 
@@ -89,7 +147,7 @@ pub struct RequestContext {
     pub service_path: String,
     pub api_path: String,
     pub sla: String,
-    pub args: HashMap<String, String>,
+    pub start_time: SystemTime,
     pub service_filters: HashMap<String, Vec<FilterSetting>>,
     pub client_filters: HashMap<String, Vec<FilterSetting>>,
     pub request_id: Uuid,
@@ -98,21 +156,20 @@ pub struct RequestContext {
 impl RequestContext {
     pub fn new(req: &Request<Body>, auth: &AuthResponse) -> Self {
         let req_id = Self::extract_request_id(req);
-        let (service_path, api_path) = Self::extract_path(req.uri().path());
+        let (service_path, api_path) = Self::split_path(req.uri().path());
         let mut context = RequestContext {
             service_id: auth.service_id.clone(),
             client_id: auth.client_id.clone(),
             service_path,
             api_path,
             sla: auth.sla.clone(),
-            args: HashMap::new(),
+            start_time: SystemTime::now(),
             service_filters: HashMap::new(),
             client_filters: HashMap::new(),
             request_id: req_id,
         };
-        if auth.error.len() > 0 {
-            context.args.insert("ERROR".into(), auth.error.clone());
-        }
+        
+        // group FilterSettings by Middlewares
         for sf in &auth.service_filters {
             let filter_type = FilterSetting::get_type(&sf);
             if let Some(filters) = context.service_filters.get_mut(&filter_type) {
@@ -132,7 +189,7 @@ impl RequestContext {
         context
     }
 
-    fn extract_path(path: &str) -> (String, String) {
+    fn split_path(path: &str) -> (String, String) {
         let path = path.strip_prefix("/").unwrap_or(path);
         let (service_path, api_path) = match path.find("/") {
             Some(pos) => {
@@ -198,21 +255,20 @@ where MW: Middleware + Default
     }
 }
 
-
+// recursively apply middlewares
 pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stack: Vec<MiddlewareHandle>)
-        -> Pin<Box<dyn Future<Output=Response<Body>> + Send>> 
+        -> Pin<Box<dyn Future<Output=Result<Response<Body>, GatewayError>> + Send>> 
 {
     let mw = mw_stack.pop();
     if mw.is_none() {
-        return Box::pin(async{
-            let resp = Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::from("Middleware misconfiguration"))
-                .unwrap();
-            resp
-        });
+        // middleware stack is empty, and no Response obtained, return error
+        return Box::pin(async {
+            Err(GatewayError::GatewayInteralError("Middleware misconfiguration".into()))
+        })
     }
+
     let MiddlewareHandle {name, chan, pre, post, require_setting} = mw.unwrap();
+    // extract middleware settings from context
     let service_filters = {
         if let Some(sfs) = context.service_filters.get(&name) {
             sfs.clone()
@@ -227,21 +283,20 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
             Vec::new()
         }
     };
-
-    if require_setting && service_filters.len() == 0 && client_filters.len() == 0 {
-        return Box::pin(async move {
-            middleware_chain(req, context, mw_stack).await
-        });
-    }
-
+    // clone settings for later use
     let resp_service_filters = service_filters.clone();
     let resp_client_filters = client_filters.clone();
+
+    // if middleware requires setting to work, and settings are empty, skip this middleware
+    if require_setting && service_filters.len() == 0 && client_filters.len() == 0 {
+        return middleware_chain(req, context, mw_stack);
+    }
+
     let fut = async move {
         // request middleware pre-filter
-        let MwPreResponse{context, request, response} = {
+        let pre_resp: Result<MwPreResponse, GatewayError> = {
             if pre {
                 let (tx, rx) = oneshot::channel();
-                let context2 = context.clone();
                 let pre_req = MwPreRequest {
                     context,
                     request: req,
@@ -250,46 +305,44 @@ pub fn middleware_chain(req: Request<Body>, context: RequestContext, mut mw_stac
                     result: tx,
                 };
                 let _ = chan.send(MiddlewareRequest::Request(pre_req)).await;
-                if let Ok(result) = rx.await {
-                    result
+
+                let result = rx.await??;
+                Ok(result)
+            } else {
+                Ok(MwPreResponse { context, next: MwNextAction::Next(req) })
+            }
+        };
+
+        let MwPreResponse { context, next } = pre_resp?;
+
+        match next {
+            // call inner middleware
+            MwNextAction::Next(request) => {
+                let context_copy = context.clone();
+                let inner_resp = middleware_chain(request, context, mw_stack).await?;
+
+                // call middleware post-filter
+                if post {
+                    let (tx, rx) = oneshot::channel();
+                    let post_req = MwPostRequest {
+                        context: context_copy,
+                        response: inner_resp,
+                        service_filters: resp_service_filters,
+                        client_filters: resp_client_filters,
+                        result: tx,
+                    };
+                    let _ = chan.send(MiddlewareRequest::Response(post_req)).await;
+                    let resp =rx.await??;
+                    Ok(resp.response)
                 } else {
-                    let msg = format!("Middleware {} not responding", name);
-                    let error = Response::builder().status(500).body(msg.into()).unwrap();
-                    MwPreResponse { context: context2, request: None, response: Some(error) }
+                    Ok(inner_resp)
                 }
-            } else {
-                MwPreResponse { context, request: Some(req), response: None }
+            },
+            // if pre-filter returns response, terminate chain and return
+            MwNextAction::Return(response) => {
+                Ok(response)
             }
-        };
-
-        // if pre-filter returns response, terminate chain and return
-        if let Some(early_resp) = response {
-            return early_resp;
         }
-
-        // call inner middleware
-        let context_copy = context.clone();
-        let inner_resp: Response<Body> = middleware_chain(request.unwrap(), context, mw_stack).await;
-
-        // call middleware post-filter
-        let final_resp = {
-            if post {
-                let (tx, rx) = oneshot::channel();
-                let post_req = MwPostRequest {
-                    context: context_copy,
-                    response: inner_resp,
-                    service_filters: resp_service_filters,
-                    client_filters: resp_client_filters,
-                    result: tx,
-                };
-                let _ = chan.send(MiddlewareRequest::Response(post_req)).await;
-                rx.await.unwrap()
-            } else {
-                MwPostResponse { context: context_copy, response: inner_resp }
-            }
-        };
-        
-        final_resp.response
     };
 
     Box::pin(fut)

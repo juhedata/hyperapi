@@ -2,7 +2,7 @@ use futures::Stream;
 use tokio::sync::mpsc;
 use std::{pin::Pin, time::Duration};
 use std::task::{Context, Poll};
-use crate::config::{file_config, ws_config, etcd_config, ConfigUpdate};
+use crate::config::{file_config, ws_config, ConfigUpdate};
 use pin_project::pin_project;
 use rand::Rng;
 use tracing::{event, Level};
@@ -31,15 +31,15 @@ impl ConfigSource {
                     tokio::time::sleep(Duration::from_secs(wait_time)).await;
                 }
             });
-        } else if source.starts_with("etcd://") {
-            tokio::spawn(async move {
-                loop {
-                    etcd_config::watch_config(source.clone(), tx.clone()).await;
-                    let wait_time = rand::thread_rng().gen_range(10..100);
-                    event!(Level::WARN, "etcd connection lost, sleep {}s to reconnect", &wait_time);
-                    tokio::time::sleep(Duration::from_secs(wait_time)).await;
-                }
-            });
+        // } else if source.starts_with("etcd://") {
+        //     tokio::spawn(async move {
+        //         loop {
+        //             etcd_config::watch_config(source.clone(), tx.clone()).await;
+        //             let wait_time = rand::thread_rng().gen_range(10..100);
+        //             event!(Level::WARN, "etcd connection lost, sleep {}s to reconnect", &wait_time);
+        //             tokio::time::sleep(Duration::from_secs(wait_time)).await;
+        //         }
+        //     });
         } else {
             // try read as config file
             tokio::spawn(async move {

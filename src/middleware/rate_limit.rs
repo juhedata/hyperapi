@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use hyper::{Response, Body, StatusCode};
 use std::time::{Instant, Duration};
 use std::future::Future;
 use std::pin::Pin;
-use crate::{config::RateLimitSetting, middleware::{Middleware, MwPreRequest, MwPreResponse, MwPostRequest}};
-use crate::config::{ConfigUpdate, FilterSetting};
+use crate::middleware::{Middleware, MwPreRequest, MwPreResponse, MwPostRequest, GatewayError, MwNextAction};
+use crate::config::{ConfigUpdate, FilterSetting, RateLimitSetting};
 
 
 #[derive(Debug)]
@@ -59,16 +58,11 @@ impl Middleware for RateLimitMiddleware {
         }
         
         if !pass {  // return error response
-            let err = Response::builder()
-                .status(StatusCode::TOO_MANY_REQUESTS)
-                .body(Body::from("Rate limit"))
-                .unwrap();
-            let response = MwPreResponse { context, request: Some(request), response: Some(err) };
-            let _ = result.send(response);
+            let _ = result.send(Err(GatewayError::RateLimited("Rate Limit".into())));
             Box::pin(async {})
         } else {
-            let response = MwPreResponse { context, request: Some(request), response: None };
-            let _ = result.send(response);
+            let response = MwPreResponse { context, next: MwNextAction::Next(request) };
+            let _ = result.send(Ok(response));
             Box::pin(async {})
         }
     }

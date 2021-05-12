@@ -1,9 +1,8 @@
-use hyper::{Body, Request, Response, http::HeaderValue};
-use std::{pin::Pin, time::{SystemTime, UNIX_EPOCH}};
+use hyper::http::HeaderValue;
+use std::{pin::Pin, time::SystemTime};
 use std::future::Future;
-use crate::middleware::{MwPostRequest, MwPreRequest, MwPostResponse, MwPreResponse, Middleware};
+use crate::middleware::{MwPostRequest, MwPreRequest, MwPostResponse, Middleware};
 use crate::config::ConfigUpdate;
-use prometheus::{Encoder, TextEncoder};
 
 
 lazy_static::lazy_static! {
@@ -12,13 +11,13 @@ lazy_static::lazy_static! {
         "Number of HTTP requests.",
         &["service", "app", "upstream", "version", "status_code", "path"]
     ).unwrap();
+
     static ref HTTP_REQ_DURATION_HIST: prometheus::HistogramVec = prometheus::register_histogram_vec!(
         "gateway_request_duration_seconds",
         "Request latency histgram",
         &["service", "app", "upstream", "version"],
         vec![0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 3.0]
     ).unwrap();
-
 }
 
 
@@ -31,78 +30,22 @@ impl Default for LoggerMiddleware {
     }
 }
 
-impl LoggerMiddleware {
-    pub fn prometheus_endpoint(_req: &Request<Body>) -> Response<Body> {
-        let encoder = TextEncoder::new();
-        let metric_families = prometheus::gather();
-        let mut buffer = vec![];
-        encoder.encode(&metric_families, &mut buffer).unwrap();
-
-        let response = Response::builder()
-            .status(200)
-            .header(hyper::header::CONTENT_TYPE, encoder.format_type())
-            .body(Body::from(buffer))
-            .unwrap();
-        response
-    }
-
-    fn extract_service_path(path: &str) -> String {
-        let path = path.strip_prefix("/").unwrap_or(path);
-        let (service_path, _path) = match path.find("/") {
-            Some(pos) => {
-                path.split_at(pos)
-            },
-            None => {
-                (path, "")
-            }
-        };
-        format!("/{}", service_path)
-    }
-    
-}
-
 
 impl Middleware for LoggerMiddleware {
     fn name() -> String {
         "Logger".into()
     }
 
+    fn pre() -> bool {
+        false
+    }
+
     fn require_setting() -> bool {
         false
     }
 
-    fn request(&mut self, task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
-        let MwPreRequest {mut context, request, service_filters: _, client_filters: _, result} = task;
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        context.args.insert("TS".into(), ts.as_secs_f64().to_string());
-
-        if context.service_id.len() == 0 || context.client_id.len() == 0 {  // auth failed, or metrics request
-            let url = request.uri().path();
-            let listen_path = Self::extract_service_path(url);
-            if listen_path.eq("/metrics") {
-                let resp = Self::prometheus_endpoint(&request);
-                let response = MwPreResponse {context: context, request: Some(request), response: Some(resp) };
-                let _ = result.send(response);
-            } else {
-                let error = {
-                    if let Some(e) = context.args.get("ERROR") {
-                        e.clone()
-                    } else {
-                        String::from("Authentication Error")
-                    }
-                };
-                let resp = Response::builder().status(403)
-                        .body(error.into())
-                        .unwrap();
-                let response = MwPreResponse {context: context, request: Some(request), response: Some(resp) };
-                let _ = result.send(response);
-            }
-            Box::pin(async {})
-        } else {
-            let response = MwPreResponse {context: context, request: Some(request), response: None };
-            let _ = result.send(response);
-            Box::pin(async {})
-        }
+    fn request(&mut self, _task: MwPreRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
+        panic!("never got here");
     }
 
     fn response(&mut self, task: MwPostRequest) -> Pin<Box<dyn Future<Output=()> + Send>> {
@@ -112,15 +55,13 @@ impl Middleware for LoggerMiddleware {
         let upstream = response.headers().get("X-UPSTREAM-ID").unwrap_or(&empty_value).to_str().unwrap();
         let version = response.headers().get("X-UPSTREAM-VERSION").unwrap_or(&empty_value).to_str().unwrap();
         
-        if let Ok(start_time) = context.args.get("TS").unwrap().parse::<f64>() {
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-            HTTP_REQ_DURATION_HIST.with_label_values(&[
-                &context.service_id,
-                &context.client_id,
-                upstream,
-                version,
-            ]).observe(now.as_secs_f64() - start_time);
-        }
+        let elapsed = SystemTime::now().duration_since(context.start_time).unwrap();
+        HTTP_REQ_DURATION_HIST.with_label_values(&[
+            &context.service_id,
+            &context.client_id,
+            upstream,
+            version,
+        ]).observe(elapsed.as_secs_f64());
 
         let path = context.api_path.clone();
         HTTP_COUNTER.with_label_values(&[
@@ -133,12 +74,11 @@ impl Middleware for LoggerMiddleware {
         ]).inc_by(1);
 
         let response = MwPostResponse {context: context, response: response };
-        let _ = result.send(response);
+        let _ = result.send(Ok(response));
         Box::pin(async {})
     }
 
     fn config_update(&mut self, _update: ConfigUpdate) {}
-
 
 }
 

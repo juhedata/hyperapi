@@ -1,7 +1,7 @@
 use hyper::{HeaderMap, header::{HeaderName, HeaderValue}};
 use std::future::Future;
 use std::pin::Pin;
-use crate::middleware::{MwPostRequest, MwPreRequest, MwPreResponse, MwPostResponse, Middleware};
+use crate::middleware::{MwPostRequest, MwPreRequest, MwPreResponse, MwPostResponse, Middleware, MwNextAction};
 use crate::config::{ConfigUpdate, FilterSetting, HeaderSetting};
 
 
@@ -35,8 +35,8 @@ impl Middleware for HeaderMiddleware {
                 headers = apply_header_filter(headers, &filter, "request");
             }
         }
-        let resp = MwPreResponse {context: context, request: Some(request), response: None };
-        let _ = result.send(resp);
+        let resp = MwPreResponse {context: context, next: MwNextAction::Next(request) };
+        let _ = result.send(Ok(resp));
         Box::pin(async {})
     }
 
@@ -54,7 +54,7 @@ impl Middleware for HeaderMiddleware {
             }
         }
         let resp = MwPostResponse {context: context, response: response };
-        let _ = result.send(resp);
+        let _ = result.send(Ok(resp));
         Box::pin(async {})
     }
 

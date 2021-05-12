@@ -1,5 +1,5 @@
 use std::{collections::HashMap, sync::Mutex, time::SystemTime};
-use super::{AuthProvider, AuthResult};
+use super::{AuthProvider, AuthResult, authenticator::GatewayAuthError};
 use hyper::http::request::Parts;
 use crate::config::{ClientInfo, ConfigUpdate};
 use jsonwebtoken as jwt;
@@ -27,40 +27,25 @@ impl AuthProvider for JWTAuthProvider {
         }
     }
 
-    fn identify_client(&self, head: Parts, service_id: &str) -> (Parts, Result<AuthResult, String>) {
-        if let Some(token) =  Self::extract_token(&head) {
-            if let Some(client_id) = Self::extract_client_id(&token) {
-                if let Some(client) =  self.apps.get(&client_id) {
-                    if let Some(sla) = client.services.get(service_id) {
-                        // check cache
-                        let mut cache = self.token_cache.lock().unwrap();
-                        if let Some(cached_key) = cache.get(&token) {
-                            event!(Level::DEBUG, "cached data {} {}", cached_key, client.app_key);
-                            if cached_key.eq(&client.app_key) {
-                                return (head, Ok(AuthResult {client_id: client.client_id.clone(), sla: sla.clone()}))
-                            } else {
-                                return (head, Err( "Invalid JWT Token".into()));
-                            }
-                        } else {
-                            if Self::verify_token(token.clone(), &client.pub_key) {
-                                cache.put(token, client.app_key.clone());
-                                return (head, Ok(AuthResult {client_id: client.client_id.clone(), sla: sla.clone()}))
-                            } else {
-                                event!(Level::DEBUG, "Invalid JWT Signature");
-                                return (head, Err( "Invalid JWT Signature".into()));
-                            }
-                        }
-                    } else {
-                        return (head, Err( "No available SLA assigned".into()))
-                    }
-                } else {
-                    return (head, Err( "Invalid app-id".into()));
-                }
+    fn identify_client(&self, head: Parts, service_id: &str) -> Result<(Parts, AuthResult), GatewayAuthError> {
+        let token =  Self::extract_token(&head)?;
+        let client_id = Self::extract_client_id(&token)?;
+        let client = self.apps.get(&client_id).ok_or(GatewayAuthError::UnknownClient)?;
+        let sla = client.services.get(service_id).ok_or(GatewayAuthError::InvalidSLA)?;
+
+        // check cache
+        let mut cache = self.token_cache.lock().unwrap();
+        if let Some(cached_key) = cache.get(&token) {
+            event!(Level::DEBUG, "cached data {} {}", cached_key, client.app_key);
+            if cached_key.eq(&client.app_key) {
+                return Ok((head, AuthResult {client_id: client.client_id.clone(), sla: sla.clone()}))
             } else {
-                return (head, Err( "Invalid JWT payload".into()));
+                return Err(GatewayAuthError::InvalidToken);
             }
         } else {
-           return (head, Err("JWT Token not found".into()));
+            Self::verify_token(token.clone(), &client.pub_key)?;
+            cache.put(token, client.app_key.clone());
+            return Ok((head, AuthResult {client_id: client.client_id.clone(), sla: sla.clone()}))
         }
     }
 }
@@ -75,33 +60,33 @@ impl JWTAuthProvider {
         }
     }
 
-    fn extract_token(head: &Parts) -> Option<String> {
+    fn extract_token(head: &Parts) -> Result<String, GatewayAuthError> {
         if let Some(token) = head.headers.get(hyper::header::AUTHORIZATION) {  // find in authorization header
             let segs: Vec<&str> = token.to_str().unwrap().split(' ').collect();
             let token = *(segs.get(1).unwrap_or(&""));
-            Some(String::from(token))
+            Ok(String::from(token))
         } else {
-            None
+            Err(GatewayAuthError::TokenNotFound)
         }
     }
 
-    fn extract_client_id(token: &str) -> Option<String> {
+    fn extract_client_id(token: &str) -> Result<String, GatewayAuthError> {
         let ts = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
         if let Ok(t) = jwt::dangerous_insecure_decode::<JwtClaims>(token) {
             if t.claims.exp > ts.as_secs() {
-                return Some(t.claims.sub);
+                return Ok(t.claims.sub);
             }
         }
-        None
+        Err(GatewayAuthError::InvalidToken)
     }
 
-    fn verify_token(token: String, pubkey: &str) -> bool {
+    fn verify_token(token: String, pubkey: &str) -> Result<(), GatewayAuthError> {
         let verifier = jwt::Validation::new(jwt::Algorithm::ES256);
         let verify_key = jwt::DecodingKey::from_ec_pem(pubkey.as_bytes()).unwrap();
         if let Ok(_td) = jwt::decode::<JwtClaims>(&token, &verify_key, &verifier) {
-            true
+            Ok(())
         } else {
-            false
+            Err(GatewayAuthError::InvalidToken)
         }
     }
 
