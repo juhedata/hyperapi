@@ -11,10 +11,7 @@ use thiserror::Error;
 
 
 #[derive(Error, Debug, Clone)]
-pub enum GatewayError { 
-    #[error("Upstream request timeout")]
-    UpstreamRequestError(String),
-
+pub enum GatewayError {
     #[error("Upstream request timeout")]
     TimeoutError,
 
@@ -44,16 +41,16 @@ pub enum GatewayError {
 }
 
 impl From<hyper::Error> for GatewayError {
-    fn from(_e: hyper::Error) -> Self {
-        // TODO
-        GatewayError::UpstreamError("upstream error".into())
+    fn from(e: hyper::Error) -> Self {
+        let msg = format!("Upstream service error: {:?}", e);
+        GatewayError::UpstreamError(msg.into())
     }
 }
 
 impl From<RecvError> for GatewayError {
-    fn from(_e: RecvError) -> Self {
-        // TODO
-        GatewayError::ChannelRecvError("Channel Receive".into())
+    fn from(e: RecvError) -> Self {
+        let msg = format!("Internal comm error: {:?}", e);
+        GatewayError::ChannelRecvError(msg.into())
     }
 }
 

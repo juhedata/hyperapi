@@ -81,7 +81,7 @@ async def test_jwt_service():
         url = "/upstream/timeout/4"
         resp = await ac.post(url, headers=headers)
         print(resp.content)
-        assert resp.status_code == 502
+        assert resp.status_code == 504
         url = "/upstream/timeout/2"
         resp = await ac.put(url, headers=headers)
         assert resp.status_code == 200

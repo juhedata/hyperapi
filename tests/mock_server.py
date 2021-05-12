@@ -4,17 +4,17 @@ import asyncio
 import json
 import random
 
-app = FastAPI()
+app = FastAPI(debug=True)
 queue = Queue(maxsize=10)
 
 
-@app.exception_handler(AssertionError)
-async def assertion_error_handler(_req: Request, exc: AssertionError):
-    print(exc)
-    return Response(
-        status_code=400,
-        content=json.dumps({"error": str(exc)}, ensure_ascii=False),
-    )
+# @app.exception_handler(AssertionError)
+# async def assertion_error_handler(_req: Request, exc: AssertionError):
+#     print(exc)
+#     return Response(
+#         status_code=400,
+#         content=json.dumps({"error": str(exc)}, ensure_ascii=False),
+#     )
     
 
 @app.api_route("/api/{api:path}", methods=['POST', 'GET', 'PUT', 'DELETE'])

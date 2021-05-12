@@ -4,7 +4,8 @@ use tower::Service;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Poll, Context};
-use crate::{auth::AuthRequest, middleware::{MiddlewareHandle, RequestContext, middleware_chain}};
+use crate::auth::AuthRequest;
+use crate::middleware::{MiddlewareHandle, RequestContext, GatewayError, middleware_chain};
 use tracing::{event, span, Level, Instrument};
 use prometheus::{Encoder, TextEncoder};
 
@@ -87,14 +88,46 @@ impl Service<Request<Body>> for RequestHandler {
                     match resp {
                         Ok(resp) => Ok(resp),
                         Err(err) => {
-                            // TODO 
-                            let msg = format!("Gateway Error: {}", err);
-                            Ok(Response::builder().status(502).body(msg.into()).unwrap())
+                            match err {
+                                GatewayError::AccessBlocked(_e) => {
+                                    let msg = format!("Not Found");
+                                    Ok(Response::builder().status(404).body(msg.into()).unwrap())
+                                },
+                                GatewayError::RateLimited(_e) => {
+                                    let msg = format!("Rate Limited");
+                                    Ok(Response::builder().status(429).body(msg.into()).unwrap())
+                                },
+                                GatewayError::GatewayInteralError(_e) => {
+                                    let msg = format!("Gateway Internal Error");
+                                    Ok(Response::builder().status(502).body(msg.into()).unwrap())
+                                },
+                                GatewayError::ServiceNotReady(_e) => {
+                                    let msg = format!("Gateway server not ready");
+                                    Ok(Response::builder().status(502).body(msg.into()).unwrap())
+                                },
+                                GatewayError::ServiceNotFound(_e) => {
+                                    let msg = format!("Service not found");
+                                    Ok(Response::builder().status(404).body(msg.into()).unwrap())
+                                },
+                                GatewayError::TimeoutError => {
+                                    let msg = format!("Request Timeout");
+                                    Ok(Response::builder().status(504).body(msg.into()).unwrap())
+                                },
+                                GatewayError::UpstreamError(msg) => {
+                                    Ok(Response::builder().status(502).body(msg.into()).unwrap())
+                                },
+                                GatewayError::ChannelRecvError(msg) => {
+                                    Ok(Response::builder().status(502).body(msg.into()).unwrap())
+                                },
+                                GatewayError::Unknown => {
+                                    Ok(Response::builder().status(502).body("Gateway Error".into()).unwrap())
+                                }
+                            }
                         }
                     }
                 },
                 Err(err) => {
-                    let msg = format!("Auth Error: {}", err);
+                    let msg = format!("Auth Error: {:?}", err);
                     Ok(Response::builder().status(502).body(msg.into()).unwrap())
                 }
             }
