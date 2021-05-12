@@ -1,4 +1,4 @@
-use hyper::{Request, Body, StatusCode, Response};
+use hyper::{Request, Body};
 use tracing::{event, Level};
 use std::{collections::HashMap};
 use std::collections::HashSet;

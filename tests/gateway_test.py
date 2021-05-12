@@ -138,23 +138,25 @@ async def test_load_balance():
         print('------------test random lb------------')
         url = "/lb1/error/200"
         counter = defaultdict(int)
-        for i in range(100):
+        for i in range(200):
             resp = await ac.get(url, headers=headers)
             upstream = resp.headers.get('x-upstream-id')
             counter[upstream] += 1
         print(counter)
         print("load distribution should be around 10:1")
+        assert 8 < (counter['11'] / counter['12']) < 15
         
         print('------------test hash lb------------')
         url = "/lb2/error/200"
         counter = defaultdict(int)
-        for i in range(100):
+        for i in range(50):
             resp = await ac.get(url, headers=headers)
             upstream = resp.headers.get('x-upstream-id')
             counter[upstream] += 1
         print(counter)
         assert len(counter) == 1
-        print("load distribution should be around 10:1")
+        print("all traffic goes to one upstream")
+        assert counter.get('22') is None or counter.get('21') is None
 
         print('------------test connection based lb------------')
         url = "/lb_conn"
@@ -164,14 +166,25 @@ async def test_load_balance():
         for c in counters:
             for usid in c.keys():
                 counter[usid].extend(c[usid])
-        print([(x, len(counter[x]), sum(counter[x]), sum(counter[x])/len(counter[x]))
-                for x in counter.keys()])
+        lb_result = [(x, len(counter[x]), sum(counter[x]), sum(counter[x])/len(counter[x]))
+                    for x in counter.keys()]
+        print("(upstream_id, request_count, total_time, average_latency)")
+        for row in lb_result:
+            print(row)
+        print("total time should be roughly the same")
+        assert 0.8 < (lb_result[0][2] / lb_result[1][2]) < 1.2
 
         print('------------test latency based lb------------')
         url = "/lb_load"
-        counter = await runner(ac, url, headers, 100)
-        print([(x, len(counter[x]), sum(counter[x]), sum(counter[x])/len(counter[x]))
-                for x in counter.keys()])
+        counter = await runner(ac, url, headers, 200)
+        lb_result =[(x, len(counter[x]), sum(counter[x]), sum(counter[x])/len(counter[x]))
+                    for x in counter.keys()]
+        print("(upstream_id, request_count, total_time, average_latency)")
+        for row in lb_result:
+            print(row)
+        print("total request count to faster backend should be roughly 4 times of slower backend")
+        sorted(lb_result, key=lambda x: x[2])
+        assert 3 < (lb_result[0][2] / lb_result[1][2]) < 8
 
     return {"result": "Pass"}
 
