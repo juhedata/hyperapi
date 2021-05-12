@@ -184,7 +184,7 @@ async def test_load_balance():
             print(row)
         print("total request count to faster backend should be roughly 4 times of slower backend")
         sorted(lb_result, key=lambda x: x[2])
-        assert 3 < (lb_result[0][2] / lb_result[1][2]) < 8
+        assert 3 < (lb_result[0][1] / lb_result[1][1]) < 8
 
     return {"result": "Pass"}
 
