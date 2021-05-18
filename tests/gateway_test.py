@@ -144,9 +144,9 @@ async def test_load_balance():
             upstream = resp.headers.get('x-upstream-id')
             counter[upstream] += 1
         print(counter)
-        print("load distribution should be around 10:1")
+        print("load distribution should be roughly 10:1")
         assert (counter['11'] + counter['12']) == 200
-        assert 8 < (counter['11'] / counter['12']) < 15
+        assert 7 < (counter['11'] / counter['12']) < 15
         
         print('------------test hash lb------------')
         url = "/lb2/error/200"

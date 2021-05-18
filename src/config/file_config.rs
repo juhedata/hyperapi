@@ -25,8 +25,8 @@ pub async fn watch_config(config_file: String, sender: mpsc::Sender<ConfigUpdate
 
     // reload config file on USR2 signal
     let mut usr2 = reload_signal::get_channel();
-    loop {
-        usr2.recv().await;
+    while let Some(_) = usr2.recv().await {
+        event!(Level::INFO, "Got reload signal");
         if let Ok(new_content) = tokio::fs::read_to_string(&config_file).await {
             if let Ok(new_config) = serde_yaml::from_str::<ServiceConfig>(&new_content) {
                 for cu in config_diff(&config, &new_config) {
@@ -40,6 +40,7 @@ pub async fn watch_config(config_file: String, sender: mpsc::Sender<ConfigUpdate
             event!(Level::ERROR, "Failed to read config file")
         }
     }
+    event!(Level::INFO, "Update channel closed");
 }
 
 
@@ -80,13 +81,15 @@ fn config_diff(old: &ServiceConfig, new: &ServiceConfig) -> Vec<ConfigUpdate> {
 mod reload_signal {
     use tokio::sync::mpsc;
     use tokio::signal::unix::{signal, SignalKind};
+    use tracing::{event, Level};
 
     pub fn get_channel() -> mpsc::Receiver<()> {
         let mut usr2 = signal(SignalKind::user_defined2()).expect("Failed to bind on USR2 signal");
         let (tx, rx) = mpsc::channel(1);
         tokio::spawn(async move {
             while let Some(_) = usr2.recv().await {
-                let _ = tx.send(());
+                event!(Level::ERROR, "Got reload signal");
+                let _ = tx.send(()).await;
             }
         });
         rx
@@ -96,15 +99,9 @@ mod reload_signal {
 #[cfg(windows)]
 mod reload_signal {
     use tokio::sync::mpsc;
-    use tokio::signal;
 
     pub fn get_channel() -> mpsc::Receiver<()>  {
-        let (tx, rx) = mpsc::channel(1);
-        tokio::spawn(async move {
-            while let _ = signal::ctrl_c().await? {
-                let _ = tx.send(());
-            }
-        });
+        let (_tx, rx) = mpsc::channel(1);
         rx
     }
 }
