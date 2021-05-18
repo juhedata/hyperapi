@@ -108,8 +108,8 @@ services:
           - type: RateLimit
             setting:
               interval: 1
-              limit: 100
-              burst: 100
+              limit: 200
+              burst: 200
               
   - service_id: test/lb_hash
     path: /lb2

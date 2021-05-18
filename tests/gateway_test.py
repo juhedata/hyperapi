@@ -140,10 +140,12 @@ async def test_load_balance():
         counter = defaultdict(int)
         for i in range(200):
             resp = await ac.get(url, headers=headers)
+            assert resp.status_code == 200
             upstream = resp.headers.get('x-upstream-id')
             counter[upstream] += 1
         print(counter)
         print("load distribution should be around 10:1")
+        assert (counter['11'] + counter['12']) == 200
         assert 8 < (counter['11'] / counter['12']) < 15
         
         print('------------test hash lb------------')
@@ -151,6 +153,7 @@ async def test_load_balance():
         counter = defaultdict(int)
         for i in range(50):
             resp = await ac.get(url, headers=headers)
+            assert resp.status_code == 200
             upstream = resp.headers.get('x-upstream-id')
             counter[upstream] += 1
         print(counter)
